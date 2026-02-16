@@ -56,9 +56,19 @@ class PluginListCommandTest extends TestCase
         parent::tearDown();
         if (file_exists($this->pluginsListPath)) {
             unlink($this->pluginsListPath);
+            $this->invalidatePhpFileCache($this->pluginsListPath);
         }
         if (file_exists($this->pluginsConfigPath)) {
             file_put_contents($this->pluginsConfigPath, $this->originalPluginsConfigContent);
+            $this->invalidatePhpFileCache($this->pluginsConfigPath);
+        }
+    }
+
+    protected function invalidatePhpFileCache($path): void
+    {
+        clearstatcache(true, $path);
+        if (function_exists('opcache_invalidate')) {
+            opcache_invalidate($path, true);
         }
     }
 
