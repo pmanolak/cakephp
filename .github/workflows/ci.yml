@@ -259,7 +259,18 @@ jobs:
       - name: Composer install
         uses: ramsey/composer-install@v3
 
+      - name: Cache phive tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.phive
+            tools
+          key: ${{ runner.os }}-phive-${{ hashFiles('.phive/phars.xml') }}
+          restore-keys: ${{ runner.os }}-phive-
+
       - name: Install PHP tools with phive.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: 'phive install --trust-gpg-keys "$PHIVE_KEYS"'
 
       - name: Run phpstan
@@ -336,6 +347,15 @@ jobs:
 
       - name: Composer install
         uses: ramsey/composer-install@v3
+
+      - name: Cache phive tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.phive
+            tools
+          key: ${{ runner.os }}-phive-${{ hashFiles('.phive/phars.xml') }}
+          restore-keys: ${{ runner.os }}-phive-
 
       - name: Install PHP tools with phive.
         env:
