@@ -404,7 +404,7 @@ class DateTest extends TestCase
 
         $date = new Date('-2 months -2 days');
         $result = $date->timeAgoInWords(['end' => '1 month', 'format' => 'yyyy-MM-dd']);
-        $this->assertSame('on ' . date('Y-m-d', strtotime('-2 months -2 days')), $result);
+        $this->assertSame('on ' . $date->format('Y-m-d'), $result);
 
         $date = new Date('-2 years -5 months -2 days');
         $result = $date->timeAgoInWords(['end' => '3 years']);
