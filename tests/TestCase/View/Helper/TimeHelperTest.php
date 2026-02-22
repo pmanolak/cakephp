@@ -56,6 +56,7 @@ class TimeHelperTest extends TestCase
     protected function tearDown(): void
     {
         parent::tearDown();
+        DateTime::setTestNow(null);
         DateTime::setDefaultLocale();
         I18n::setLocale(I18n::getDefaultLocale());
     }
@@ -119,8 +120,6 @@ class TimeHelperTest extends TestCase
             '/div',
         ];
         $this->assertHtml($expected, $result);
-
-        DateTime::setTestNow(null);
     }
 
     /**
