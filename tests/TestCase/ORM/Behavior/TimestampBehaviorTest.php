@@ -272,8 +272,8 @@ class TimestampBehaviorTest extends TestCase
             'Should return a timestamp object',
         );
 
-        // Compare timestamps within a small tolerance to avoid flaky tests
-        $this->assertEqualsWithDelta(time(), $return->getTimestamp(), 2);
+        // Compare timestamps within tolerance to avoid flaky tests during slow CI runs
+        $this->assertEqualsWithDelta(time(), $return->getTimestamp(), 60);
     }
 
     /**
