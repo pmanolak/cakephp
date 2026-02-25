@@ -404,6 +404,7 @@ class TimestampBehaviorTest extends TestCase
      */
     public function testSaveTriggersInsert(): void
     {
+        $previousTestNow = DateTime::getTestNow();
         $now = new DateTime('2026-01-01 12:00:00');
         DateTime::setTestNow($now);
 
@@ -427,7 +428,7 @@ class TimestampBehaviorTest extends TestCase
             $this->assertSame($now->toDateTimeString(), $row->created->toDateTimeString());
             $this->assertSame($now->toDateTimeString(), $row->updated->toDateTimeString());
         } finally {
-            DateTime::setTestNow();
+            DateTime::setTestNow($previousTestNow);
         }
     }
 
