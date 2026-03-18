@@ -171,7 +171,8 @@ component-%:
 	git checkout $(CURRENT_BRANCH) > /dev/null
 	- (git remote add pkg-$* git@github.com:$(OWNER)/$*.git -f 2> /dev/null)
 	- (git branch -D $* 2> /dev/null)
-	git subtree split --prefix=src/$(shell php -r "echo ucfirst('$*');") -b $*
+	git checkout -b $*
+	git filter-branch --prune-empty --subdirectory-filter src/$(shell php -r "echo ucfirst('$*');") -f $*
 	git push -f pkg-$* $*:$(CURRENT_BRANCH)
 	git checkout $(CURRENT_BRANCH) > /dev/null
 
