@@ -554,10 +554,7 @@ class CompositeKeysTest extends TestCase
     public function testFindThreadedCompositeKeys(): void
     {
         $table = $this->getTableLocator()->get('SiteAuthors');
-        $query = $this->getMockBuilder(SelectQuery::class)
-            ->onlyMethods(['_addDefaultFields', 'execute'])
-            ->setConstructorArgs([$table])
-            ->getMock();
+        $query = new SelectQuery($table);
 
         $items = new ResultSetDecorator([
             ['id' => 1, 'name' => 'a', 'site_id' => 1, 'parent_id' => null],

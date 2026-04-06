@@ -232,7 +232,7 @@ class ConsoleInputArgument
             $values = [$value];
         }
 
-        $unwanted = array_filter($values, fn($value) => !in_array($value, $this->_choices, true));
+        $unwanted = array_filter($values, fn(string $value) => !in_array($value, $this->_choices, true));
         if ($unwanted) {
             throw new ConsoleException(
                 sprintf(
@@ -256,6 +256,7 @@ class ConsoleInputArgument
     public function xml(SimpleXMLElement $parent): SimpleXMLElement
     {
         $option = $parent->addChild('argument');
+        assert($option !== null);
         $option->addAttribute('name', $this->_name);
         $option->addAttribute('help', $this->_help);
         $option->addAttribute('required', (string)(int)$this->isRequired());

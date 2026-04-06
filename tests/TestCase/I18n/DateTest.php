@@ -54,7 +54,7 @@ class DateTest extends TestCase
     protected function tearDown(): void
     {
         parent::tearDown();
-        DateTime::setDefaultLocale(null);
+        DateTime::setDefaultLocale();
         date_default_timezone_set('UTC');
     }
 
@@ -310,7 +310,7 @@ class DateTest extends TestCase
             'accuracy' => ['year' => 'year'],
             'end' => '+2 months',
         ]);
-        $expected = 'exactly on ' . date('n/j/y', strtotime('+4 months +2 weeks +3 days'));
+        $expected = 'exactly on ' . $date->format('n/j/y');
         $this->assertSame($expected, $result);
     }
 
@@ -386,7 +386,7 @@ class DateTest extends TestCase
 
         $date = new Date('+2 months +2 days');
         $result = $date->timeAgoInWords(['end' => '1 month', 'format' => 'yyyy-MM-dd']);
-        $this->assertSame('on ' . date('Y-m-d', strtotime('+2 months +2 days')), $result);
+        $this->assertSame('on ' . $date->format('Y-m-d'), $result);
     }
 
     /**
@@ -404,7 +404,7 @@ class DateTest extends TestCase
 
         $date = new Date('-2 months -2 days');
         $result = $date->timeAgoInWords(['end' => '1 month', 'format' => 'yyyy-MM-dd']);
-        $this->assertSame('on ' . date('Y-m-d', strtotime('-2 months -2 days')), $result);
+        $this->assertSame('on ' . $date->format('Y-m-d'), $result);
 
         $date = new Date('-2 years -5 months -2 days');
         $result = $date->timeAgoInWords(['end' => '3 years']);
@@ -464,5 +464,30 @@ class DateTest extends TestCase
         $expected = 'Y-m-d';
         $result = Date::parseDate('12/03/2015');
         $this->assertSame('2015-03-12', $result->format($expected));
+    }
+
+    /**
+     * Test getTimestamp() method
+     */
+    public function testGetTimestamp(): void
+    {
+        $date2000 = new Date('2000-01-01');
+        $this->assertSame(946684800, $date2000->getTimestamp());
+
+        $date1970 = new Date('1970-01-01');
+        $this->assertSame(0, $date1970->getTimestamp());
+    }
+
+    /**
+     * Test getTimestamp() consistency with DateTime
+     */
+    public function testGetTimestampConsistencyWithDateTime(): void
+    {
+        $dateStr = '2024-01-15';
+        $date = new Date($dateStr);
+        $dateTime = new DateTime($dateStr . ' 00:00:00');
+
+        // For the same date at midnight, timestamps should match
+        $this->assertSame($dateTime->getTimestamp(), $date->getTimestamp());
     }
 }

@@ -183,6 +183,31 @@ class WebExceptionRendererTest extends TestCase
     }
 
     /**
+     * Test that NotFoundException with prefix renders error400 when prefix templates don't exist
+     * Regression test for issue #17599
+     */
+    public function testNotFoundExceptionWithPrefixWithoutPrefixTemplate(): void
+    {
+        Configure::write('debug', false);
+
+        // Create a request with a prefix that doesn't have error templates
+        $request = (new ServerRequest())
+            ->withParam('controller', 'Foo')
+            ->withParam('action', 'bar')
+            ->withParam('prefix', 'CustomPrefix'); // This prefix doesn't have error templates
+
+        $exception = new NotFoundException('Page not found');
+        $renderer = new WebExceptionRenderer($exception, $request);
+
+        $result = $renderer->render();
+
+        // Should use error400 template, not error500
+        $controller = $renderer->__debugInfo()['controller'];
+        $this->assertSame('error400', $controller->viewBuilder()->getTemplate());
+        $this->assertSame(404, $result->getStatusCode());
+    }
+
+    /**
      * test that methods declared in an WebExceptionRenderer subclass are not converted
      * into error400 when debug > 0
      */
@@ -958,11 +983,10 @@ class WebExceptionRendererTest extends TestCase
         $loggedQuery = new LoggedQuery();
         $loggedQuery->setContext([
             'query' => 'SELECT * from poo_query < 5 and :seven',
-            'driver' => $this->getMockBuilder(Driver::class)->getMock(),
+            'driver' => $this->createStub(Driver::class),
             'params' => ['seven' => 7],
         ]);
-        $pdoException = $this->getMockBuilder(PDOException::class)->getMock();
-        $exception = new QueryException($loggedQuery, $pdoException);
+        $exception = new QueryException($loggedQuery, new PDOException());
 
         $ExceptionRenderer = new WebExceptionRenderer($exception);
         $response = $ExceptionRenderer->render();

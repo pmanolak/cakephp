@@ -21,6 +21,7 @@ use Cake\Http\Cookie\Cookie;
 use Cake\Http\Response;
 use Cake\Http\ResponseEmitter;
 use Cake\TestSuite\TestCase;
+use Mockery;
 
 require_once __DIR__ . '/server_mocks.php';
 
@@ -43,14 +44,16 @@ class ResponseEmitterTest extends TestCase
 
         $GLOBALS['mockedHeadersSent'] = false;
         $GLOBALS['mockedHeaders'] = [];
+        $GLOBALS['mockedCookies'] = [];
 
-        $this->emitter = $this->getMockBuilder(ResponseEmitter::class)
-            ->onlyMethods(['setCookie'])
-            ->getMock();
+        $this->emitter = Mockery::mock(ResponseEmitter::class)
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $this->emitter->__construct();
 
-        $this->emitter->expects($this->any())
-            ->method('setCookie')
-            ->willReturnCallback(function ($cookie) {
+        $this->emitter->shouldReceive('setCookie')
+            ->zeroOrMoreTimes()
+            ->andReturnUsing(function ($cookie) {
                 if (is_string($cookie)) {
                     $cookie = Cookie::createFromHeaderString($cookie, ['path' => '']);
                 }

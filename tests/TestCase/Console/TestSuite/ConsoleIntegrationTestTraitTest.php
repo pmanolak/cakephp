@@ -45,7 +45,7 @@ class ConsoleIntegrationTestTraitTest extends TestCase
         $this->exec('');
 
         $this->assertExitCode(CommandInterface::CODE_SUCCESS);
-        $this->assertOutputContains('Current Paths');
+        $this->assertOutputContains('Available Commands');
         $this->assertExitSuccess();
     }
 
@@ -174,6 +174,20 @@ class ConsoleIntegrationTestTraitTest extends TestCase
         $this->assertExitCode(CommandInterface::CODE_SUCCESS);
     }
 
+    /**
+     * tests exec with input
+     */
+    public function testExecWithInputOnSecondCall(): void
+    {
+        $this->exec('integration "test"');
+        $this->assertExitCode(CommandInterface::CODE_SUCCESS);
+
+        // This exec() call should work.
+        $this->exec('bridge', ['cake', 'blue']);
+        $this->assertOutputContains('You may pass');
+        $this->assertExitCode(CommandInterface::CODE_SUCCESS);
+    }
+
     public function testExecWithMockServiceDependencies(): void
     {
         $this->mockService(stdClass::class, function () {
@@ -233,7 +247,7 @@ class ConsoleIntegrationTestTraitTest extends TestCase
 
         $this->exec($command);
 
-        call_user_func_array($this->$assertion(...), $rest);
+        $this->$assertion(...$rest);
     }
 
     /**
@@ -274,7 +288,7 @@ class ConsoleIntegrationTestTraitTest extends TestCase
         $line = __LINE__ - 5;
 
         $expected = <<<TEXT
-$file on $line
+{$file} on {$line}
 ########## debugOutput() ##########
 Exit Code
 0

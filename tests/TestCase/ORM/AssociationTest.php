@@ -23,6 +23,7 @@ use Cake\ORM\Locator\LocatorInterface;
 use Cake\ORM\Table;
 use Cake\TestSuite\TestCase;
 use InvalidArgumentException;
+use Mockery;
 use TestApp\Model\Table\AuthorsTable;
 use TestApp\Model\Table\TestTable;
 use TestPlugin\Model\Table\CommentsTable;
@@ -38,7 +39,7 @@ class AssociationTest extends TestCase
     protected $source;
 
     /**
-     * @var \Cake\ORM\Association|\PHPUnit\Framework\MockObject\MockObject
+     * @var \Cake\ORM\Association&\Mockery\MockInterface
      */
     protected $association;
 
@@ -57,13 +58,13 @@ class AssociationTest extends TestCase
             'sourceTable' => $this->source,
             'joinType' => 'INNER',
         ];
-        $this->association = $this->getMockBuilder(Association::class)
-            ->onlyMethods([
-                '_options', 'attachTo', '_joinCondition', 'cascadeDelete', 'isOwningSide',
-                'saveAssociated', 'eagerLoader', 'type', 'requiresKeys',
-            ])
-            ->setConstructorArgs(['Foo', $config])
-            ->getMock();
+        $this->association = Mockery::mock(
+            Association::class . '[_options,attachTo,_joinCondition,cascadeDelete,isOwningSide,saveAssociated,eagerLoader,type]',
+            ['Foo', $config],
+        )
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods()
+            ->shouldIgnoreMissing();
     }
 
     /**
@@ -73,7 +74,7 @@ class AssociationTest extends TestCase
     public function testOptionsIsCalled(): void
     {
         $options = ['foo' => 'bar'];
-        $this->association->expects($this->once())->method('_options')->with($options);
+        $this->association->shouldReceive('_options')->once()->with($options);
         $this->association->__construct('Name', $options);
     }
 
@@ -83,10 +84,16 @@ class AssociationTest extends TestCase
      */
     public function testSetttingClassNameFromAlias(): void
     {
-        $association = $this->getMockBuilder(Association::class)
-            ->onlyMethods(['type', 'eagerLoader', 'cascadeDelete', 'isOwningSide', 'saveAssociated'])
-            ->setConstructorArgs(['Foo'])
-            ->getMock();
+        /** @var \Cake\ORM\Association&\Mockery\MockInterface $association */
+        $association = Mockery::mock(
+            Association::class . '[type,eagerLoader,cascadeDelete,isOwningSide,saveAssociated]',
+            ['Foo'],
+        )
+            ->makePartial()
+            ->shouldIgnoreMissing();
+        $association->shouldReceive('type')
+            ->byDefault()
+            ->andReturn(Association::MANY_TO_ONE);
 
         $this->assertSame('Foo', $association->getClassName());
     }
@@ -155,13 +162,16 @@ class AssociationTest extends TestCase
         $config = [
             'className' => 'Test',
         ];
-        $this->association = $this->getMockBuilder(Association::class)
-            ->onlyMethods([
-                '_options', 'attachTo', '_joinCondition', 'cascadeDelete', 'isOwningSide',
-                'saveAssociated', 'eagerLoader', 'type', 'requiresKeys',
-            ])
-            ->setConstructorArgs(['Foo', $config])
-            ->getMock();
+        $this->association = Mockery::mock(
+            Association::class . '[_options,attachTo,_joinCondition,cascadeDelete,isOwningSide,saveAssociated,eagerLoader,type]',
+            ['Foo', $config],
+        )
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods()
+            ->shouldIgnoreMissing();
+        $this->association->shouldReceive('type')
+            ->byDefault()
+            ->andReturn(Association::MANY_TO_ONE);
 
         $this->assertSame('Test', $this->association->getClassName());
     }
@@ -177,13 +187,16 @@ class AssociationTest extends TestCase
         $config = [
             'className' => TestTable::class,
         ];
-        $this->association = $this->getMockBuilder(Association::class)
-            ->onlyMethods([
-                '_options', 'attachTo', '_joinCondition', 'cascadeDelete', 'isOwningSide',
-                'saveAssociated', 'eagerLoader', 'type', 'requiresKeys',
-            ])
-            ->setConstructorArgs(['Test', $config])
-            ->getMock();
+        $this->association = Mockery::mock(
+            Association::class . '[_options,attachTo,_joinCondition,cascadeDelete,isOwningSide,saveAssociated,eagerLoader,type]',
+            ['Test', $config],
+        )
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods()
+            ->shouldIgnoreMissing();
+        $this->association->shouldReceive('type')
+            ->byDefault()
+            ->andReturn(Association::MANY_TO_ONE);
         $this->association->setSource($this->getTableLocator()->get('Test'));
 
         $this->association->getTarget();
@@ -202,13 +215,16 @@ class AssociationTest extends TestCase
         $config = [
             'className' => $className,
         ];
-        $this->association = $this->getMockBuilder(Association::class)
-            ->onlyMethods([
-                '_options', 'attachTo', '_joinCondition', 'cascadeDelete', 'isOwningSide',
-                'saveAssociated', 'eagerLoader', 'type', 'requiresKeys',
-            ])
-            ->setConstructorArgs(['Test', $config])
-            ->getMock();
+        $this->association = Mockery::mock(
+            Association::class . '[_options,attachTo,_joinCondition,cascadeDelete,isOwningSide,saveAssociated,eagerLoader,type]',
+            ['Test', $config],
+        )
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods()
+            ->shouldIgnoreMissing();
+        $this->association->shouldReceive('type')
+            ->byDefault()
+            ->andReturn(Association::MANY_TO_ONE);
 
         $target = $this->association->getTarget();
         $this->assertInstanceOf($className, $target);
@@ -240,9 +256,9 @@ class AssociationTest extends TestCase
     {
         $this->source->setPrimaryKey(['id', 'site_id']);
         $this->association
-            ->expects($this->once())
-            ->method('isOwningSide')
-            ->willReturn(true);
+            ->shouldReceive('isOwningSide')
+            ->once()
+            ->andReturn(true);
         $result = $this->association->getBindingKey();
         $this->assertEquals(['id', 'site_id'], $result);
     }
@@ -258,9 +274,9 @@ class AssociationTest extends TestCase
         $this->association->setTarget($target);
 
         $this->association
-            ->expects($this->once())
-            ->method('isOwningSide')
-            ->willReturn(false);
+            ->shouldReceive('isOwningSide')
+            ->once()
+            ->andReturn(false);
         $result = $this->association->getBindingKey();
         $this->assertEquals(['foo', 'site_id'], $result);
     }
@@ -322,13 +338,15 @@ class AssociationTest extends TestCase
             'joinType' => 'INNER',
         ];
 
-        $this->association = $this->getMockBuilder(Association::class)
-            ->onlyMethods([
-                'type', 'eagerLoader', 'cascadeDelete', 'isOwningSide', 'saveAssociated',
-                'requiresKeys',
-            ])
-            ->setConstructorArgs(['ThisAssociationName', $config])
-            ->getMock();
+        $this->association = Mockery::mock(
+            Association::class . '[type,eagerLoader,cascadeDelete,isOwningSide,saveAssociated]',
+            ['ThisAssociationName', $config],
+        )
+            ->makePartial()
+            ->shouldIgnoreMissing();
+        $this->association->shouldReceive('type')
+            ->byDefault()
+            ->andReturn(Association::MANY_TO_ONE);
 
         $table = $this->association->getTarget();
         $this->assertInstanceOf(CommentsTable::class, $table);
@@ -394,33 +412,6 @@ class AssociationTest extends TestCase
     }
 
     /**
-     * Test that warning is not shown if "propertyName" option is explicitly specified.
-     */
-    public function testPropertyNameExplicitySet(): void
-    {
-        $this->source->setSchema(['foo' => ['type' => 'string']]);
-
-        $config = [
-            'className' => TestTable::class,
-            'foreignKey' => 'a_key',
-            'conditions' => ['field' => 'value'],
-            'dependent' => true,
-            'sourceTable' => $this->source,
-            'joinType' => 'INNER',
-            'propertyName' => 'foo',
-        ];
-        $association = $this->getMockBuilder(Association::class)
-            ->onlyMethods([
-                '_options', 'attachTo', '_joinCondition', 'cascadeDelete', 'isOwningSide',
-                'saveAssociated', 'eagerLoader', 'type', 'requiresKeys',
-            ])
-            ->setConstructorArgs(['Foo', $config])
-            ->getMock();
-
-        $this->assertSame('foo', $association->getProperty());
-    }
-
-    /**
      * Tests strategy method
      */
     public function testSetStrategy(): void
@@ -467,13 +458,15 @@ class AssociationTest extends TestCase
             'joinType' => 'INNER',
             'finder' => 'published',
         ];
-        $assoc = $this->getMockBuilder(Association::class)
-            ->onlyMethods([
-                'type', 'eagerLoader', 'cascadeDelete', 'isOwningSide', 'saveAssociated',
-                'requiresKeys',
-            ])
-            ->setConstructorArgs(['Foo', $config])
-            ->getMock();
+        $assoc = Mockery::mock(
+            Association::class . '[type,eagerLoader,cascadeDelete,isOwningSide,saveAssociated]',
+            ['Foo', $config],
+        )
+            ->makePartial()
+            ->shouldIgnoreMissing();
+        $assoc->shouldReceive('type')
+            ->byDefault()
+            ->andReturn(Association::MANY_TO_ONE);
         $this->assertSame('published', $assoc->getFinder());
     }
 
@@ -481,7 +474,7 @@ class AssociationTest extends TestCase
     {
         $this->association->setFinder('publishedWithArgOnly');
         $this->assertEquals(
-            ['custom', 'this' => 'custom'],
+            ['this' => 'custom'],
             $this->association->find(null, 'custom')->getOptions(),
         );
         $this->assertEquals(
@@ -516,18 +509,20 @@ class AssociationTest extends TestCase
      */
     public function testLocatorInConstructor(): void
     {
-        $locator = $this->getMockBuilder(LocatorInterface::class)->getMock();
+        $locator = Mockery::mock(LocatorInterface::class);
         $config = [
             'className' => TestTable::class,
             'tableLocator' => $locator,
         ];
-        $assoc = $this->getMockBuilder(Association::class)
-            ->onlyMethods([
-                'type', 'eagerLoader', 'cascadeDelete', 'isOwningSide', 'saveAssociated',
-                'requiresKeys',
-            ])
-            ->setConstructorArgs(['Foo', $config])
-            ->getMock();
+        $assoc = Mockery::mock(
+            Association::class . '[type,eagerLoader,cascadeDelete,isOwningSide,saveAssociated]',
+            ['Foo', $config],
+        )
+            ->makePartial()
+            ->shouldIgnoreMissing();
+        $assoc->shouldReceive('type')
+            ->byDefault()
+            ->andReturn(Association::MANY_TO_ONE);
         $this->assertEquals($locator, $assoc->getTableLocator());
     }
 }

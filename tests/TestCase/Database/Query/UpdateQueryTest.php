@@ -26,13 +26,13 @@ use Cake\Database\Expression\QueryExpression;
 use Cake\Database\ExpressionInterface;
 use Cake\Database\Query\SelectQuery;
 use Cake\Database\Query\UpdateQuery;
-use Cake\Database\Statement\Statement;
+use Cake\Database\StatementInterface;
 use Cake\Database\ValueBinder;
 use Cake\Datasource\ConnectionManager;
 use Cake\Test\TestCase\Database\QueryAssertsTrait;
 use Cake\TestSuite\TestCase;
 use DateTime;
-use PDOStatement;
+use Mockery;
 
 /**
  * Tests UpdateQuery class
@@ -168,7 +168,7 @@ class UpdateQueryTest extends TestCase
     {
         $query = new UpdateQuery($this->connection);
 
-        $expr = $query->newExpr()->equalFields('article_id', 'user_id');
+        $expr = $query->expr()->equalFields('article_id', 'user_id');
 
         $query->update('comments')
             ->set($expr)
@@ -310,7 +310,7 @@ class UpdateQueryTest extends TestCase
                     'AND' => [
                         'b.name NOT IN' => ['foo', 'bar'],
                         'OR' => [
-                            $query->newExpr()->eq(new IdentifierExpression('c.name'), 'zap'),
+                            $query->expr()->eq(new IdentifierExpression('c.name'), 'zap'),
                             'd.name' => 'baz',
                             (new SelectQuery($this->connection))->select(['e.name'])->where(['e.name' => 'oof']),
                         ],
@@ -374,28 +374,20 @@ class UpdateQueryTest extends TestCase
      */
     public function testRowCountAndClose(): void
     {
-        $inner = $this->getMockBuilder(PDOStatement::class)->getMock();
+        $statementMock = Mockery::mock(StatementInterface::class);
+        $statementMock->shouldReceive('rowCount')
+            ->once()
+            ->andReturn(500);
+        $statementMock->shouldReceive('closeCursor')
+            ->once();
 
-        $statementMock = $this->getMockBuilder(Statement::class)
-            ->setConstructorArgs([$inner, $this->connection->getDriver()])
-            ->onlyMethods(['rowCount', 'closeCursor'])
-            ->getMock();
-
-        $statementMock->expects($this->once())
-            ->method('rowCount')
-            ->willReturn(500);
-
-        $statementMock->expects($this->once())
-            ->method('closeCursor');
-
-        $queryMock = $this->getMockBuilder(UpdateQuery::class)
-            ->onlyMethods(['execute'])
-            ->setConstructorArgs([$this->connection])
-            ->getMock();
-
-        $queryMock->expects($this->once())
-            ->method('execute')
-            ->willReturn($statementMock);
+        $queryMock = Mockery::mock(UpdateQuery::class)
+            ->makePartial()
+            ->shouldIgnoreMissing();
+        $queryMock->__construct($this->connection);
+        $queryMock->shouldReceive('execute')
+            ->once()
+            ->andReturn($statementMock);
 
         $rowCount = $queryMock->update('authors')
             ->set('name', 'mark')
@@ -408,7 +400,7 @@ class UpdateQueryTest extends TestCase
     public function testCloneUpdateExpression(): void
     {
         $query = new UpdateQuery($this->connection);
-        $query->update($query->newExpr('update'));
+        $query->update($query->expr('update'));
 
         $clause = $query->clause('update');
         $clauseClone = (clone $query)->clause('update');
@@ -426,7 +418,7 @@ class UpdateQueryTest extends TestCase
         $query = new UpdateQuery($this->connection);
         $query
             ->update('table')
-            ->set(['column' => $query->newExpr('value')]);
+            ->set(['column' => $query->expr('value')]);
 
         $clause = $query->clause('set');
         $clauseClone = (clone $query)->clause('set');
@@ -470,7 +462,7 @@ class UpdateQueryTest extends TestCase
         $result = $query
             ->update('authors')
             ->set('name', 'mark')
-            ->modifier([$query->newExpr('TOP 10 PERCENT')]);
+            ->modifier([$query->expr('TOP 10 PERCENT')]);
         $this->assertQuotedQuery(
             'UPDATE TOP 10 PERCENT <authors> SET <name> = :c0',
             $result->sql(),

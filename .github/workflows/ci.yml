@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - '4.x'
-      - '4.next'
       - '5.x'
       - '5.next'
   pull_request:
@@ -21,25 +20,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-version: ['8.1', '8.3']
+        php-version: ['8.2', '8.5']
         db-type: [sqlite, pgsql]
+        dependencies: ['highest']
         include:
-          - php-version: '8.1'
+          - php-version: '8.2'
             db-type: 'mariadb'
-          - php-version: '8.1'
-            db-type: 'mysql'
-            dependencies: 'lowest'
+            dependencies: highest
+
           - php-version: '8.2'
             db-type: 'mysql'
+            dependencies: 'lowest'
+
+          - php-version: '8.2'
+            db-type: 'mysql'
+            dependencies: highest
+
           - php-version: '8.3'
             db-type: 'mysql'
+            dependencies: highest
+
           - php-version: '8.4'
             db-type: 'mysql'
             dependencies: highest
+
           - php-version: '8.5'
-            db-type: 'sqlite'
+            db-type: 'mysql'
             dependencies: highest
-            composer-options: '--ignore-platform-req=php'
 
     services:
       redis:
@@ -50,14 +57,24 @@ jobs:
         image: memcached
         ports:
           - 11211/tcp
+      redis-cluster:
+        image: grokzen/redis-cluster:6.2.1
+        ports:
+          - 7000:7000
+          - 7001:7001
+        options: >-
+          --health-cmd "redis-cli -p 7000 ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - name: Setup MySQL 8.4
-      if: matrix.db-type == 'mysql' && matrix.dependencies == 'highest'
+      if: matrix.db-type == 'mysql' && matrix.dependencies == 'highest' && matrix.php-version != '8.3'
       run: docker run --rm --name=mysqld -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=cakephp -p 3306:3306 -d mysql:8.4
 
     - name: Setup MySQL 8.0
-      if: matrix.db-type == 'mysql' && matrix.dependencies == ''
+      if: matrix.db-type == 'mysql' && matrix.dependencies == 'highest' && matrix.php-version == '8.3'
       run: |
         sudo service mysql start
         mysql -h 127.0.0.1 -u root -proot -e 'CREATE DATABASE cakephp;'
@@ -66,17 +83,34 @@ jobs:
       if: matrix.db-type == 'mysql' && matrix.dependencies == 'lowest'
       run: docker run --rm --name=mysqld -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=cakephp -p 3306:3306 -d mysql:5.7 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
-    - name: Setup PostgreSQL latest
+    - name: Setup PostgreSQL with PostGIS
       if: matrix.db-type == 'pgsql'
-      run: docker run --rm --name=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=cakephp -p 5432:5432 -d postgres
+      run: docker run --rm --name=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=cakephp -p 5432:5432 -d postgis/postgis:18-3.6
 
-    - uses: getong/mariadb-action@v1.11
+    - name: Setup MariaDB 11.8
       if: matrix.db-type == 'mariadb'
-      with:
-        mysql database: 'cakephp'
-        mysql root password: 'root'
+      run: |
+        docker run -d --name=mariadb \
+          -e MARIADB_ROOT_PASSWORD=root \
+          -e MARIADB_DATABASE=cakephp \
+          -p 3306:3306 \
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -proot || exit 1" \
+          --health-interval=10s \
+          --health-timeout=5s \
+          --health-retries=10 \
+          mariadb:11.8
 
-    - uses: actions/checkout@v5
+        echo "Waiting for MariaDB to be ready..."
+        for i in {1..60}; do
+          if docker exec mariadb mariadb-admin ping -h 127.0.0.1 -proot >/dev/null 2>&1; then
+            echo "MariaDB is responding."
+            break
+          fi
+
+          sleep 2
+        done
+
+    - uses: actions/checkout@v6
       with:
         persist-credentials: false
 
@@ -94,52 +128,57 @@ jobs:
         sudo locale-gen de_DE.UTF-8
 
     - name: Composer install
-      uses: ramsey/composer-install@v3
+      uses: ramsey/composer-install@v4
       with:
         dependency-versions: ${{ matrix.dependencies }}
         composer-options: "${{ matrix.composer-options }}"
 
     - name: Setup problem matchers for PHPUnit
-      if: matrix.php-version == '8.1' && matrix.db-type == 'mysql'
+      if: matrix.php-version == '8.2' && matrix.db-type == 'mysql'
       run: echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
 
     - name: Run PHPUnit
       env:
         REDIS_PORT: ${{ job.services.redis.ports['6379'] }}
         MEMCACHED_PORT: ${{ job.services.memcached.ports['11211'] }}
+        REDIS_CLUSTER_NODES: "127.0.0.1:7000,127.0.0.1:7001"
       run: |
         if [[ ${{ matrix.db-type }} == 'sqlite' ]]; then export DB_URL='sqlite:///:memory:'; fi
         if [[ ${{ matrix.db-type }} == 'mysql' ]]; then export DB_URL='mysql://root:root@127.0.0.1/cakephp'; fi
         if [[ ${{ matrix.db-type }} == 'mariadb' ]]; then export DB_URL='mysql://root:root@127.0.0.1/cakephp'; fi
         if [[ ${{ matrix.db-type }} == 'pgsql' ]]; then export DB_URL='postgres://postgres:postgres@127.0.0.1/postgres'; fi
 
-        if [[ ${{ matrix.php-version }} == '8.1' ]]; then
+        if [[ ${{ matrix.php-version }} == '8.2' && ${{ matrix.dependencies }} == 'highest' ]]; then
           export CODECOVERAGE=1
-          vendor/bin/phpunit --display-warnings --display-incomplete --coverage-clover=coverage.xml
-          CAKE_TEST_AUTOQUOTE=1 vendor/bin/phpunit --display-deprecations --display-warnings --display-incomplete --testsuite=database
-          vendor/bin/phpunit --display-warnings --display-incomplete --testsuite=globalfunctions --coverage-clover=coverage-functions.xml
+          vendor/bin/phpunit --display-all-issues --fail-on-all-issues --do-not-fail-on-skipped --do-not-fail-on-incomplete --testsuite=cakephp --coverage-clover=coverage.xml
+          vendor/bin/phpunit --display-all-issues --fail-on-all-issues --do-not-fail-on-skipped --do-not-fail-on-incomplete --testsuite=database --coverage-clover=coverage-database.xml
+          CAKE_TEST_AUTOQUOTE=1 vendor/bin/phpunit --display-all-issues --fail-on-all-issues --do-not-fail-on-skipped --do-not-fail-on-incomplete --testsuite=database
+          vendor/bin/phpunit --display-all-issues --fail-on-all-issues --do-not-fail-on-skipped --do-not-fail-on-incomplete --do-not-fail-on-warning --testsuite=globalfunctions --coverage-clover=coverage-functions.xml
+        elif [[ ${{ matrix.php-version }} == '8.2' && ${{ matrix.dependencies }} == 'lowest' ]]; then
+          vendor/bin/phpunit
+          CAKE_TEST_AUTOQUOTE=1 vendor/bin/phpunit --testsuite=database
         else
-          vendor/bin/phpunit --display-phpunit-deprecations --display-deprecations --display-warnings
-          CAKE_TEST_AUTOQUOTE=1 vendor/bin/phpunit --display-phpunit-deprecations --display-deprecations --display-warnings --testsuite=database
+          vendor/bin/phpunit --display-phpunit-notices --display-phpunit-deprecations --display-deprecations --display-warnings
+          CAKE_TEST_AUTOQUOTE=1 vendor/bin/phpunit --display-phpunit-notices --display-phpunit-deprecations --display-deprecations --display-warnings --testsuite=database
         fi
 
     - name: Submit code coverage
-      if: matrix.php-version == '8.1'
-      uses: codecov/codecov-action@v5
+      if: matrix.php-version == '8.2'
+      uses: codecov/codecov-action@v6
       with:
-        files: coverage.xml,coverage-functions.xml
+        files: coverage.xml,coverage-database.xml,coverage-functions.xml
         token: ${{ secrets.CODECOV_TOKEN }}
 
   testsuite-windows:
     runs-on: windows-2022
-    name: Windows - PHP 8.1 & SQL Server
+    name: Windows - PHP 8.2 & SQL Server
 
     env:
       EXTENSIONS: mbstring, intl, apcu, redis, pdo_sqlsrv
-      PHP_VERSION: '8.1'
+      PHP_VERSION: '8.2'
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         persist-credentials: false
 
@@ -156,7 +195,7 @@ jobs:
         key: ${{ steps.key-date.outputs.date }}
 
     - name: Cache PHP extensions
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ steps.php-ext-cache.outputs.dir }}
         key: ${{ runner.os }}-php-ext-${{ steps.php-ext-cache.outputs.key }}
@@ -178,7 +217,7 @@ jobs:
         sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "create database cakephp;"
 
     - name: Composer install
-      uses: ramsey/composer-install@v3
+      uses: ramsey/composer-install@v4
 
     - name: Run PHPUnit
       env:
@@ -203,33 +242,52 @@ jobs:
       PHPSTAN_TESTS: 1
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.1'
-          extensions: mbstring, intl
+          php-version: '8.2'
+          extensions: mbstring, intl, pcntl
           coverage: none
           tools: phive, cs2pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Composer install
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
+
+      - name: Cache phive tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.phive
+            tools
+          key: ${{ runner.os }}-phive-${{ hashFiles('.phive/phars.xml') }}
+          restore-keys: ${{ runner.os }}-phive-
 
       - name: Install PHP tools with phive.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: 'phive install --trust-gpg-keys "$PHIVE_KEYS"'
-
-      - name: Run phpcs
-        if: always()
-        run: vendor/bin/phpcs --report=checkstyle | cs2pr
 
       - name: Run phpstan
         if: always()
         run: tools/phpstan analyse --error-format=github
+
+      - name: Setup phpcs cache
+        if: always()
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/phpcs.cache
+          key: ${{ runner.os }}-phpcs-${{ hashFiles('phpcs.xml', 'composer.lock') }}
+          restore-keys: ${{ runner.os }}-phpcs-
+
+      - name: Run phpcs
+        if: always()
+        run: vendor/bin/phpcs --parallel=8 --cache=${{ runner.temp }}/phpcs.cache --report=checkstyle | cs2pr
 
       - name: Run phpstan for tests
         if: env.PHPSTAN_TESTS
@@ -247,6 +305,24 @@ jobs:
         if: matrix.prefer-lowest == 'prefer-lowest'
         run: composer require --dev dereuromark/composer-prefer-lowest && vendor/bin/validate-prefer-lowest -m
 
+      - name: Setup rector cache
+        if: always()
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/rector
+          key: ${{ runner.os }}-rector-${{ hashFiles('rector.php', 'composer.lock') }}
+          restore-keys: ${{ runner.os }}-rector-
+
+      - name: Create rector cache dir
+        if: always()
+        run: mkdir -p ${{ runner.temp }}/rector
+
+      - name: Run rector
+        if: always()
+        env:
+          RECTOR_CACHE_DIR: ${{ runner.temp }}/rector
+        run: composer rector-setup && composer rector-check
+
   split-packages-stan:
     name: Static Analysis for Split Packages
     runs-on: ubuntu-24.04
@@ -255,14 +331,14 @@ jobs:
       PHIVE_KEYS: 'CF1A108D0E7AE720,51C67305FFC2E5C0,12CE0F1D262429A5'
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.1'
+          php-version: '8.2'
           extensions: mbstring, intl
           coverage: none
           tools: phive
@@ -270,11 +346,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Composer install
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
+
+      - name: Cache phive tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.phive
+            tools
+          key: ${{ runner.os }}-phive-${{ hashFiles('.phive/phars.xml') }}
+          restore-keys: ${{ runner.os }}-phive-
 
       - name: Install PHP tools with phive.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: 'phive install --trust-gpg-keys "$PHIVE_KEYS"'
 
       - name: Run phpstan for split packages
-        continue-on-error: true
         run: php contrib/validate-split-packages-phpstan.php

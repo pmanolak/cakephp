@@ -28,6 +28,7 @@ use Cake\TestSuite\TestCase;
 use InvalidArgumentException;
 use Laminas\Diactoros\UploadedFile;
 use Laminas\Diactoros\Uri;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UriInterface;
@@ -1128,6 +1129,38 @@ class ServerRequestTest extends TestCase
     }
 
     /**
+     * Test getFilteredQueryParams()
+     */
+    public function testGetFilteredQueryParams(): void
+    {
+        $get = [
+            'test' => ['foo', 'bar'],
+            'key' => 'value',
+        ];
+
+        $only = [
+            'test' => ['foo', 'bar'],
+        ];
+
+        $exclude = [
+            'key' => 'value',
+        ];
+
+        $request = new ServerRequest([
+            'query' => $get,
+        ]);
+
+        $this->assertSame($only, $request->getFilteredQueryParams(['test']));
+        $this->assertSame($only, $request->getFilteredQueryParams(only: ['test']));
+        $this->assertSame($exclude, $request->getFilteredQueryParams(exclude: ['test']));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Specify either `$only` or `$exclude`, not both.');
+
+        $request->getFilteredQueryParams(only: ['test'], exclude: ['test']);
+    }
+
+    /**
      * Test using param()
      */
     public function testReadingParams(): void
@@ -1223,6 +1256,21 @@ class ServerRequestTest extends TestCase
             ],
         ]);
         $this->assertSame($expected, $request->getParam($toRead));
+    }
+
+    public function testGetParamQueryParamsDeprecation(): void
+    {
+        $this->deprecated(function (): void {
+            $request = new ServerRequest([
+                'url' => '/',
+                'params' => [
+                    'action' => 'index',
+                    '?' => ['foo' => 'bar'],
+                ],
+            ]);
+
+            $this->assertSame(['foo' => 'bar'], $request->getParam('?'));
+        });
     }
 
     /**
@@ -1380,7 +1428,7 @@ class ServerRequestTest extends TestCase
         $request = new ServerRequest([
             'input' => 'key=val&some=data',
         ]);
-        $body = $this->getMockBuilder(StreamInterface::class)->getMock();
+        $body = Mockery::mock(StreamInterface::class);
         $new = $request->withBody($body);
         $this->assertNotSame($new, $request);
         $this->assertNotSame($body, $request->getBody());
@@ -1409,7 +1457,7 @@ class ServerRequestTest extends TestCase
             ],
             'url' => 'articles/view/3',
         ]);
-        $uri = $this->getMockBuilder(UriInterface::class)->getMock();
+        $uri = Mockery::mock(UriInterface::class)->shouldIgnoreMissing();
         $new = $request->withUri($uri);
         $this->assertNotSame($new, $request);
         $this->assertNotSame($uri, $request->getUri());

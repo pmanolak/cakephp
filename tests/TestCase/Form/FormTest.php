@@ -165,20 +165,21 @@ class FormTest extends TestCase
      */
     public function testExecuteInvalid(): void
     {
-        $form = new class extends Form {
-            // phpcs:ignore CakePHP.NamingConventions.ValidFunctionName.PublicWithUnderscore
-            public function _execute(array $data): bool
-            {
-                throw new Exception('Should not be called');
-            }
-        };
-        $form->getValidator()
-            ->add('email', 'format', ['rule' => 'email']);
-        $data = [
-            'email' => 'rong',
-        ];
+        $this->deprecated(function (): void {
+            $form = new class extends Form {
+                protected function _execute(array $data): bool
+                {
+                    throw new Exception('Should not be called');
+                }
+            };
+            $form->getValidator()
+                ->add('email', 'format', ['rule' => 'email']);
+            $data = [
+                'email' => 'rong',
+            ];
 
-        $this->assertFalse($form->execute($data));
+            $this->assertFalse($form->execute($data));
+        });
     }
 
     /**
@@ -194,6 +195,38 @@ class FormTest extends TestCase
         ];
 
         $this->assertTrue($form->execute($data));
+    }
+
+    /**
+     * test execute() when data is valid.
+     */
+    public function testExecuteWithProcess(): void
+    {
+        $form = new class extends Form {
+            public function process(array $data): bool
+            {
+                return false;
+            }
+        };
+
+        $this->assertFalse($form->execute([]));
+    }
+
+    /**
+     * test execute()
+     */
+    public function testExecuteWithExecuteAndNoValidate(): void
+    {
+        $this->deprecated(function (): void {
+            $form = new class extends Form {
+                protected function _execute(array $data): bool
+                {
+                    return false;
+                }
+            };
+
+            $this->assertFalse($form->execute([], ['validate' => false]));
+        });
     }
 
     /**
@@ -273,5 +306,73 @@ class FormTest extends TestCase
         $this->assertArrayHasKey('_errors', $result);
         $this->assertArrayHasKey('_validator', $result);
         $this->assertArrayHasKey('_data', $result);
+    }
+
+    /**
+     * Test getError() with nested field validation using dot notation
+     */
+    public function testGetErrorNestedFields(): void
+    {
+        $form = new Form();
+
+        $nestedValidator = new Validator();
+        $nestedValidator->add('field_name', 'notBlank', [
+            'rule' => 'notBlank',
+            'message' => 'This field is required',
+        ]);
+
+        $form->getValidator()->addNested('Common', $nestedValidator);
+
+        $data = [
+            'Common' => [
+                'field_name' => '',
+            ],
+        ];
+
+        $form->validate($data);
+
+        // Test accessing nested errors using dot notation
+        $error = $form->getError('Common.field_name');
+        $this->assertNotEmpty($error);
+        $this->assertSame('This field is required', $error['notBlank']);
+
+        // Test accessing parent level errors
+        $commonErrors = $form->getError('Common');
+        $this->assertNotEmpty($commonErrors);
+        $this->assertArrayHasKey('field_name', $commonErrors);
+    }
+
+    /**
+     * Test getError() with deeply nested fields
+     */
+    public function testGetErrorDeeplyNestedFields(): void
+    {
+        $form = new Form();
+
+        $deepValidator = new Validator();
+        $deepValidator->add('deep_field', 'notBlank', [
+            'rule' => 'notBlank',
+            'message' => 'Deep field is required',
+        ]);
+
+        $midValidator = new Validator();
+        $midValidator->addNested('level', $deepValidator);
+
+        $form->getValidator()->addNested('parent', $midValidator);
+
+        $data = [
+            'parent' => [
+                'level' => [
+                    'deep_field' => '',
+                ],
+            ],
+        ];
+
+        $form->validate($data);
+
+        // Test accessing deeply nested errors using dot notation
+        $error = $form->getError('parent.level.deep_field');
+        $this->assertNotEmpty($error);
+        $this->assertSame('Deep field is required', $error['notBlank']);
     }
 }

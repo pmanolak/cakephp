@@ -352,6 +352,46 @@ class CollectionTest extends TestCase
     }
 
     /**
+     * Tests any() when one of the calls return true
+     */
+    public function testAnyReturnTrue(): void
+    {
+        $collection = new Collection([]);
+        $result = $collection->any(function ($v) {
+            return true;
+        });
+        $this->assertFalse($result);
+
+        $items = ['a' => 1, 'b' => 2, 'c' => 3];
+        $collection = new Collection($items);
+
+        $results = [];
+        $this->assertTrue($collection->some(function ($value, $key) use (&$results) {
+            $results[] = [$key => $value];
+
+            return $key === 'b';
+        }));
+        $this->assertSame([['a' => 1], ['b' => 2]], $results);
+    }
+
+    /**
+     * Tests any() when none of the calls return true
+     */
+    public function testAnyReturnFalse(): void
+    {
+        $items = ['a' => 1, 'b' => 2, 'c' => 3];
+        $collection = new Collection($items);
+
+        $results = [];
+        $this->assertFalse($collection->any(function ($value, $key) use (&$results) {
+            $results[] = [$key => $value];
+
+            return false;
+        }));
+        $this->assertSame([['a' => 1], ['b' => 2], ['c' => 3]], $results);
+    }
+
+    /**
      * Tests some() when one of the calls return true
      */
     public function testSomeReturnTrue(): void
@@ -2025,6 +2065,7 @@ class CollectionTest extends TestCase
         $result = $collection->__debugInfo();
         $expected = [
             'count' => 3,
+            'items' => [1, 2, 3],
         ];
         $this->assertSame($expected, $result);
 
@@ -2032,6 +2073,7 @@ class CollectionTest extends TestCase
         $result = $collection->__debugInfo();
         $expected = [
             'count' => 3,
+            'items' => [1, 2, 3],
         ];
         $this->assertSame($expected, $result);
 
@@ -2040,17 +2082,11 @@ class CollectionTest extends TestCase
         $collection = new Collection($iterator);
 
         $result = $collection->__debugInfo();
-        $expected = [
-            'count' => 3,
-        ];
-        $this->assertSame($expected, $result);
+        $this->assertStringContainsString('NoRewindIterator', $result['innerIterator']::class);
 
         // Calling it again will in this case not rewind
         $result = $collection->__debugInfo();
-        $expected = [
-            'count' => 0,
-        ];
-        $this->assertSame($expected, $result);
+        $this->assertStringContainsString('NoRewindIterator', $result['innerIterator']::class);
 
         $filter = function ($value): void {
             throw new Exception('filter exception');
@@ -2059,10 +2095,7 @@ class CollectionTest extends TestCase
         $collection = new Collection($iterator);
 
         $result = $collection->__debugInfo();
-        $expected = [
-            'count' => 'An exception occurred while getting count',
-        ];
-        $this->assertSame($expected, $result);
+        $this->assertStringContainsString('CallbackFilterIterator', $result['innerIterator']::class);
     }
 
     /**
@@ -2760,5 +2793,33 @@ class CollectionTest extends TestCase
 
         $collection->filter($callable)->filter($callable);
         $this->assertTrue(true);
+    }
+
+    /**
+     * Tests that extending Collection does not cause infinite loops
+     * when iterating and calling methods like every() inside the loop.
+     *
+     * @see https://github.com/cakephp/cakephp/issues/17483
+     */
+    public function testExtendedCollectionNoInfiniteLoop(): void
+    {
+        $items = [
+            ['id' => 1, 'name' => 'foo'],
+            ['id' => 2, 'name' => 'bar'],
+            ['id' => 3, 'name' => 'baz'],
+        ];
+
+        $collection = new class ($items) extends Collection {
+        };
+
+        $count = 0;
+        foreach ($collection as $item) {
+            $count++;
+            // Calling every() inside foreach should not cause infinite loop
+            $result = $collection->every(fn($i) => isset($i['id']));
+            $this->assertTrue($result);
+        }
+
+        $this->assertSame(3, $count);
     }
 }

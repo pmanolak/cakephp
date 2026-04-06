@@ -526,7 +526,7 @@ class QueryRegressionTest extends TestCase
     {
         $table = $this->getTableLocator()->get('Articles');
         $table->addBehavior('Translate', ['fields' => ['title', 'body']]);
-        $table->setLocale('eng');
+        $table->getBehavior('Translate')->setLocale('eng');
         $query = $table->find('translations')
             ->orderBy(['Articles.id' => 'ASC'])
             ->limit(10)
@@ -1069,11 +1069,11 @@ class QueryRegressionTest extends TestCase
         $ratio = $table->find()
             ->select(function ($query) use ($table) {
                 $allCommentsCount = $table->find()->select($query->func()->count('*'));
-                $countToFloat = $query->newExpr([$query->func()->count('*'), '1.0'])->setConjunction('*');
+                $countToFloat = $query->expr([$query->func()->count('*'), '1.0'])->setConjunction('*');
 
                 return [
                     'ratio' => $query
-                        ->newExpr($countToFloat)
+                        ->expr($countToFloat)
                         ->add($allCommentsCount)
                         ->setConjunction('/'),
                 ];
@@ -1457,7 +1457,7 @@ class QueryRegressionTest extends TestCase
         $table = $this->getTableLocator()->get('Articles');
         $query = $table->find();
         $query->orderByDesc(
-            $query->newExpr()->case()->when(['id' => 3])->then(1)->else(0),
+            $query->expr()->case()->when(['id' => 3])->then(1)->else(0),
         );
         $query->orderBy(['title' => 'desc']);
         // Executing the normal query before getting the count
@@ -1467,9 +1467,9 @@ class QueryRegressionTest extends TestCase
         $table = $this->getTableLocator()->get('Articles');
         $query = $table->find();
         $query->orderByDesc(
-            $query->newExpr()->case()->when(['id' => 3])->then(1)->else(0),
+            $query->expr()->case()->when(['id' => 3])->then(1)->else(0),
         );
-        $query->orderByDesc($query->newExpr()->add(['id' => 3]));
+        $query->orderByDesc($query->expr()->add(['id' => 3]));
         // Not executing the query first, just getting the count
         $this->assertSame(3, $query->count());
     }
@@ -1519,7 +1519,7 @@ class QueryRegressionTest extends TestCase
         $articles->hasMany('articlesTags');
         $tags = $articles->getAssociation('articlesTags')->getTarget()->belongsTo('tags');
 
-        $tags->getTarget()->getEventManager()->on('Model.beforeFind', function ($e, $query) {
+        $tags->getTarget()->getEventManager()->on('Model.beforeFind', function ($e, $query): void {
             $query->formatResults(function ($results) {
                 return $results->map(function (Entity $tag) {
                     $tag->name .= ' - visited';
@@ -1715,5 +1715,138 @@ class QueryRegressionTest extends TestCase
 
         $result = $query->first()->get('value');
         $this->assertSame('mariano appended', $result);
+    }
+
+    /**
+     * Test that eager loading with subquery strategy properly preserves limit and order clauses.
+     * This is a regression test for issue #11395 where limit and order clauses were not
+     * properly propagated in eager loaded associations.
+     *
+     * @see https://github.com/cakephp/cakephp/issues/11395
+     * @return void
+     */
+    public function testEagerLoadingWithOrderAndLimitPreservation(): void
+    {
+        // Set up Authors table with Articles association
+        $authors = $this->getTableLocator()->get('Authors');
+        $articles = $this->getTableLocator()->get('Articles');
+        $authors->hasMany('Articles', [
+            'foreignKey' => 'author_id',
+            'strategy' => 'subquery',
+        ]);
+
+        // First, ensure we have an author with more than 2 articles to properly test the limit
+        // Create additional test articles for author_id 1 (mariano)
+        $testArticles = [
+            ['author_id' => 1, 'title' => 'Test Article X', 'body' => 'Body X', 'published' => 'Y'],
+            ['author_id' => 1, 'title' => 'Test Article Y', 'body' => 'Body Y', 'published' => 'Y'],
+            ['author_id' => 1, 'title' => 'Test Article Z', 'body' => 'Body Z', 'published' => 'Y'],
+        ];
+
+        foreach ($testArticles as $article) {
+            $entity = $articles->newEntity($article);
+            $articles->save($entity);
+        }
+
+        // Verify author 1 now has more than 2 articles
+        $totalArticles = $articles->find()
+            ->where(['author_id' => 1])
+            ->count();
+        $this->assertGreaterThan(2, $totalArticles, 'Test requires author to have more than 2 articles');
+
+        // Test with both order and limit - both should be preserved
+        $query = $authors->find()
+            ->contain(['Articles' => function ($q) {
+                return $q->orderBy(['Articles.id' => 'DESC'])
+                    ->limit(2);
+            }])
+            ->where(['Authors.id' => 1]);
+
+        $result = $query->first();
+        $this->assertNotNull($result);
+        $this->assertNotEmpty($result->articles, 'Author should have articles');
+
+        // Check that we got exactly 2 articles due to the limit (not less)
+        $this->assertCount(2, $result->articles, 'Should return exactly 2 articles when limit is applied');
+
+        // Verify that articles are ordered by id DESC
+        $ids = collection($result->articles)->extract('id')->toArray();
+        $sortedIds = $ids;
+        rsort($sortedIds);
+        $this->assertEquals($sortedIds, $ids, 'Articles should be ordered by id DESC');
+
+        // Verify we got the 2 articles with highest IDs
+        $allIds = $articles->find()
+            ->select(['id'])
+            ->where(['author_id' => 1])
+            ->orderBy(['id' => 'DESC'])
+            ->limit(2)
+            ->all()
+            ->extract('id')
+            ->toArray();
+        $this->assertEquals($allIds, $ids, 'Should return the 2 articles with highest IDs');
+
+        // Test with only order (no limit) - order should be preserved
+        $query = $authors->find()
+            ->contain(['Articles' => function ($q) {
+                return $q->orderBy(['Articles.title' => 'ASC']);
+            }])
+            ->where(['Authors.id' => 1]);
+
+        $result = $query->first();
+        $this->assertNotNull($result);
+        $this->assertGreaterThan(2, count($result->articles), 'Should have all articles when no limit');
+
+        $titles = collection($result->articles)->extract('title')->toArray();
+        $sortedTitles = $titles;
+        sort($sortedTitles);
+        $this->assertEquals($sortedTitles, $titles, 'Articles should be ordered by title ASC');
+
+        // Test with only limit (no order) - limit should be respected
+        $query = $authors->find()
+            ->contain(['Articles' => function ($q) {
+                return $q->limit(1);
+            }])
+            ->where(['Authors.id' => 1]);
+
+        $result = $query->first();
+        $this->assertNotNull($result);
+        $this->assertCount(1, $result->articles, 'Should return exactly 1 article when limit is 1');
+    }
+
+    /**
+     * Test that executed queries, can still be used as subqueries
+     */
+    public function testExecutedSubqueryCanBeReused(): void
+    {
+        $articles = $this->getTableLocator()->get('Articles');
+        $users = $this->getTableLocator()->get('Users');
+        $articles->belongsTo('Users', [
+            'foreignKey' => 'author_id',
+        ]);
+
+        $subquery1 = $articles->find()
+            ->select(['id'])
+            ->where(['title LIKE' => '%First%', 'id >=' => 1]);
+
+        $subquery2 = $users->find()
+            ->select(['id'])
+            ->where(['username' => 'mariano']);
+
+        // Execute the query to force it to have a different value binder
+        $subquery1->all();
+
+        $query = $articles->find()
+            ->contain('Users')
+            ->where([
+                'Users.id IN' => $subquery2,
+                'Articles.id IN' => $subquery1,
+            ]);
+        $result = $query->all()->toArray();
+
+        // If these assertions fail, the query is likely malformed
+        $this->assertCount(1, $result);
+        $this->assertEquals('First Article', $result[0]->title);
+        $this->assertNotEmpty($result[0]->user);
     }
 }

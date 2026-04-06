@@ -61,7 +61,7 @@ class DateTimeTypeTest extends TestCase
     {
         parent::setUp();
         $this->type = new DateTimeType();
-        $this->driver = $this->getMockBuilder(Driver::class)->getMock();
+        $this->driver = $this->createStub(Driver::class);
 
         $this->originalTimeZone = date_default_timezone_get();
     }
@@ -330,9 +330,8 @@ class DateTimeTypeTest extends TestCase
     {
         date_default_timezone_set('Europe/Vienna');
         $value = DateTime::now();
-        $expected = DateTime::now();
         $result = $this->type->marshal($value);
-        $this->assertEquals($expected, $result);
+        $this->assertEquals($value, $result);
     }
 
     /**

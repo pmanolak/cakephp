@@ -18,6 +18,7 @@ namespace Cake\Test\TestCase\View\Helper;
 
 use Cake\Core\Configure;
 use Cake\Datasource\Paging\PaginatedResultSet;
+use Cake\Datasource\Paging\SortField;
 use Cake\Http\ServerRequest;
 use Cake\I18n\I18n;
 use Cake\ORM\ResultSet;
@@ -25,6 +26,7 @@ use Cake\Routing\Router;
 use Cake\TestSuite\TestCase;
 use Cake\View\Helper\PaginatorHelper;
 use Cake\View\View;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
@@ -130,7 +132,20 @@ class PaginatorHelperTest extends TestCase
         $this->assertArrayHasKey('test', $result);
         $this->assertSame('val', $result['test']);
 
-        $this->assertSame('val', $this->Paginator->getTemplates('test'));
+        $this->assertSame('val', $this->Paginator->getTemplate('test'));
+    }
+
+    /**
+     * Test the getTemplate() method.
+     */
+    public function testGetTemplate(): void
+    {
+        $this->Paginator->setTemplates([
+            'test' => 'val',
+        ]);
+
+        $result = $this->Paginator->getTemplate('test');
+        $this->assertSame('val', $result);
     }
 
     /**
@@ -308,6 +323,52 @@ class PaginatorHelperTest extends TestCase
     }
 
     /**
+     * testSortLinksWithLockOption method
+     *
+     * @return void
+     */
+    public function testSortLinksWithLockOption(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/accounts/',
+            'params' => [
+                'plugin' => null,
+                'controller' => 'Accounts',
+                'action' => 'index',
+                'pass' => [],
+            ],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+
+        $params = [
+            'sort' => 'date',
+            'direction' => 'asc',
+        ];
+        $this->setPaginatedResult($params);
+        $this->Paginator->options(['url' => ['param']]);
+
+        $result = $this->Paginator->sort('distance', options: ['lock' => true]);
+        $expected = [
+            'a' => ['href' => '/Accounts/index/param?sort=distance&amp;direction=asc'],
+            'Distance',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+
+        $this->setPaginatedResult(['sort' => 'distance'], true);
+
+        $result = $this->Paginator->sort('distance', options: ['lock' => true]);
+        $expected = [
+            'a' => ['href' => '/Accounts/index/param?sort=distance&amp;direction=asc', 'class' => 'asc locked'],
+            'Distance',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+    }
+
+    /**
      * test sort() with escape option
      */
     public function testSortEscape(): void
@@ -420,6 +481,121 @@ class PaginatorHelperTest extends TestCase
         $expected = [
             'a' => ['href' => '/Accounts/index/param?sort=title&amp;direction=desc'],
             'descending',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+    }
+
+    /**
+     * Test that sort() auto-applies direction from sortableFields
+     */
+    public function testSortLinksWithSortableFieldsDirection(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/accounts/',
+            'params' => [
+                'plugin' => null,
+                'controller' => 'Accounts',
+                'action' => 'index',
+                'pass' => [],
+            ],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+
+        // Simulate sortableFields in paging params with desc default direction
+        $params = [
+            'sortableFields' => [
+                'title' => [
+                    new SortField('title', 'desc', false),
+                ],
+            ],
+        ];
+        $this->setPaginatedResult($params);
+
+        // Should use desc as default direction from sortableFields
+        $result = $this->Paginator->sort('title');
+        $expected = [
+            'a' => ['href' => '/Accounts/index?sort=title&amp;direction=desc'],
+            'Title',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+    }
+
+    /**
+     * Test that sort() auto-applies lock from sortableFields
+     */
+    public function testSortLinksWithSortableFieldsLock(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/accounts/',
+            'params' => [
+                'plugin' => null,
+                'controller' => 'Accounts',
+                'action' => 'index',
+                'pass' => [],
+            ],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+
+        // Simulate sortableFields in paging params with locked field
+        $params = [
+            'sort' => 'newest',
+            'sortableFields' => [
+                'newest' => [
+                    new SortField('id', 'desc', true),
+                ],
+            ],
+        ];
+        $this->setPaginatedResult($params);
+
+        // Should apply locked class automatically
+        $result = $this->Paginator->sort('newest');
+        $expected = [
+            'a' => ['href' => '/Accounts/index?sort=newest&amp;direction=desc', 'class' => 'desc locked'],
+            'Newest',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+    }
+
+    /**
+     * Test that explicit direction/lock options override sortableFields
+     */
+    public function testSortLinksExplicitOptionsOverrideSortableFields(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/accounts/',
+            'params' => [
+                'plugin' => null,
+                'controller' => 'Accounts',
+                'action' => 'index',
+                'pass' => [],
+            ],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+
+        // Simulate sortableFields with desc default
+        $params = [
+            'sortableFields' => [
+                'title' => [
+                    new SortField('title', 'desc', true),
+                ],
+            ],
+        ];
+        $this->setPaginatedResult($params);
+
+        // Explicit direction should override sortableFields
+        $result = $this->Paginator->sort('title', options: ['direction' => 'asc', 'lock' => false]);
+        $expected = [
+            'a' => ['href' => '/Accounts/index?sort=title&amp;direction=asc'],
+            'Title',
             '/a',
         ];
         $this->assertHtml($expected, $result);
@@ -601,6 +777,109 @@ class PaginatorHelperTest extends TestCase
             '/a',
         ];
         $this->assertHtml($expected, $result);
+    }
+
+    /**
+     * Test sort links with combined format
+     */
+    public function testSortLinksCombinedFormat(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/accounts/',
+            'params' => [
+                'plugin' => null,
+                'controller' => 'Accounts',
+                'action' => 'index',
+                'pass' => [],
+            ],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+
+        $this->setPaginatedResult([
+            'alias' => 'Articles',
+            'currentPage' => 1,
+            'count' => 9,
+            'totalCount' => 62,
+            'hasPrevPage' => false,
+            'hasNextPage' => true,
+            'pageCount' => 7,
+        ], false);
+        $this->Paginator->options(['url' => ['param']]);
+
+        // Test default format (separate)
+        $result = $this->Paginator->sort('title');
+        $expected = [
+            'a' => ['href' => '/Accounts/index/param?sort=title&amp;direction=asc'],
+            'Title',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+
+        // Test combined format
+        $this->Paginator->setConfig('options.sortFormat', 'combined');
+        $result = $this->Paginator->sort('title');
+        $expected = [
+            'a' => ['href' => '/Accounts/index/param?sort=title-asc'],
+            'Title',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+
+        // Test combined format with currently sorted field (toggles direction)
+        $this->setPaginatedResult([
+            'alias' => 'Articles',
+            'sort' => 'title',
+        ]);
+        $result = $this->Paginator->sort('title');
+        $expected = [
+            'a' => ['href' => '/Accounts/index/param?sort=title-desc', 'class' => 'asc'],
+            'Title',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+
+        // Test combined format with dot notation
+        $this->setPaginatedResult([
+            'alias' => 'Articles',
+        ]);
+        $result = $this->Paginator->sort('Articles.author');
+        $expected = [
+            'a' => ['href' => '/Accounts/index/param?sort=Articles.author-asc'],
+            'Articles Author',
+            '/a',
+        ];
+        $this->assertHtml($expected, $result);
+    }
+
+    /**
+     * Test that combined format removes direction parameter
+     */
+    public function testSortLinksCombinedFormatResetsDirection(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/accounts/',
+            'params' => [
+                'plugin' => null,
+                'controller' => 'Accounts',
+                'action' => 'index',
+                'pass' => [],
+            ],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+        $this->Paginator = new PaginatorHelper($this->View);
+
+        $this->setPaginatedResult([
+            'alias' => 'Articles',
+            'direction' => 'desc',
+        ]);
+        $this->Paginator->setConfig('options.sortFormat', 'combined');
+        $result = $this->Paginator->sort('title');
+        $this->assertStringNotContainsString('direction=', $result);
+        $this->assertStringContainsString('sort=title-asc', $result);
     }
 
     /**
@@ -2718,7 +2997,7 @@ class PaginatorHelperTest extends TestCase
             ['label' => ['for' => 'limit']],
             'View',
             '/label',
-            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.submit()']],
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
             ['option' => ['value' => '1']],
             '1',
             '/option',
@@ -2735,7 +3014,7 @@ class PaginatorHelperTest extends TestCase
             ['label' => ['for' => 'limit']],
             'View',
             '/label',
-            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.submit()', 'class' => 'form-control']],
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()', 'class' => 'form-control']],
             ['option' => ['value' => '1']],
             '1',
             '/option',
@@ -2755,7 +3034,7 @@ class PaginatorHelperTest extends TestCase
             ['label' => ['for' => 'limit']],
             'View',
             '/label',
-            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.submit()', 'class' => 'form-control']],
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()', 'class' => 'form-control']],
             ['option' => ['value' => '20']],
             '20',
             '/option',
@@ -2778,7 +3057,7 @@ class PaginatorHelperTest extends TestCase
             ['label' => ['for' => 'limit']],
             'View',
             '/label',
-            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.submit()']],
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
             ['option' => ['value' => '20']],
             '20',
             '/option',
@@ -2817,12 +3096,55 @@ class PaginatorHelperTest extends TestCase
 
         $out = $this->Paginator->limitControl([1 => 1]);
         $expected = [
-            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/batches?owner=billy&amp;expected=1&amp;page=1']],
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/batches']],
+            ['input' => ['type' => 'hidden', 'name' => 'owner', 'value' => 'billy']],
+            ['input' => ['type' => 'hidden', 'name' => 'expected', 'value' => '1']],
+            ['input' => ['type' => 'hidden', 'name' => 'page', 'value' => '1']],
             ['div' => ['class' => 'input select']],
             ['label' => ['for' => 'limit']],
             'View',
             '/label',
-            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.submit()']],
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '1']],
+            '1',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * test the limitControl() escapes query parameters
+     *
+     * @return void
+     */
+    public function testLimitControlUrlWithQueryEscaping(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/batches?page=2&xyz"/><script>alert(\'hi\')</script>xyz=hi',
+            'params' => [
+                'plugin' => null, 'controller' => 'Batches', 'action' => 'index', 'pass' => [],
+            ],
+            'query' => ['xyz"/><script>alert(\'hi\')</script>xyz' => 'hi'],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+        $this->View->setRequest($request);
+        $this->setPaginatedResult(['perPage' => 10, 'currentPage' => 2]);
+
+        $out = $this->Paginator->limitControl([1 => 1]);
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/batches']],
+            ['input' => ['type' => 'hidden', 'name' => 'xyz&quot;/&gt;&lt;script&gt;alert(&#039;hi&#039;)&lt;/script&gt;xyz', 'value' => 'hi']],
+            ['input' => ['type' => 'hidden', 'name' => 'page', 'value' => '1']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
             ['option' => ['value' => '1']],
             '1',
             '/option',
@@ -2845,7 +3167,7 @@ class PaginatorHelperTest extends TestCase
             ['label' => ['for' => 'limit']],
             'View',
             '/label',
-            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.submit()']],
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
             ['option' => ['value' => '20']],
             '20',
             '/option',
@@ -2869,7 +3191,7 @@ class PaginatorHelperTest extends TestCase
             ['label' => ['for' => 'limit']],
             'View',
             '/label',
-            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.submit()']],
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
             ['option' => ['value' => '20']],
             '20',
             '/option',
@@ -2916,17 +3238,391 @@ class PaginatorHelperTest extends TestCase
 
         $out = $this->Paginator->limitControl([25 => 25, 50 => 50]);
         $expected = [
-            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/?article%5Bpage%5D=1']],
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/']],
+            ['input' => ['type' => 'hidden', 'name' => 'article[page]', 'value' => '1']],
             ['div' => ['class' => 'input select']],
             ['label' => ['for' => 'article-limit']],
             'View',
             '/label',
-            ['select' => ['name' => 'article[limit]', 'id' => 'article-limit', 'onChange' => 'this.form.submit()']],
+            ['select' => ['name' => 'article[limit]', 'id' => 'article-limit', 'onChange' => 'this.form.requestSubmit()']],
             ['option' => ['value' => '25', 'selected' => 'selected']],
             '25',
             '/option',
             ['option' => ['value' => '50']],
             '50',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * test the limitControl() method preserves query strings on page 1
+     */
+    public function testLimitControlPreservesQueryStringsOnPageOne(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/users?status=active&role=admin',
+            'params' => [
+                'plugin' => null, 'controller' => 'Users', 'action' => 'index', 'pass' => [],
+            ],
+            'query' => ['status' => 'active', 'role' => 'admin'],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+        $this->View->setRequest($request);
+        $this->setPaginatedResult(['perPage' => 20, 'currentPage' => 1]);
+
+        $out = $this->Paginator->limitControl([20 => 20, 50 => 50]);
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/users']],
+            ['input' => ['type' => 'hidden', 'name' => 'status', 'value' => 'active']],
+            ['input' => ['type' => 'hidden', 'name' => 'role', 'value' => 'admin']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '20', 'selected' => 'selected']],
+            '20',
+            '/option',
+            ['option' => ['value' => '50']],
+            '50',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * test the limitControl() method excludes pagination params but preserves other query strings
+     */
+    public function testLimitControlExcludesPaginationParams(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/posts?category=tech&sort=title&direction=asc&page=1&limit=25',
+            'params' => [
+                'plugin' => null, 'controller' => 'Posts', 'action' => 'index', 'pass' => [],
+            ],
+            'query' => ['category' => 'tech', 'sort' => 'title', 'direction' => 'asc', 'page' => '1', 'limit' => '25'],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+        $this->View->setRequest($request);
+        $this->setPaginatedResult(['perPage' => 25, 'currentPage' => 1]);
+
+        $out = $this->Paginator->limitControl([25 => 25, 100 => 100]);
+        $expected = [
+            // Should only have category as hidden field, not sort/direction/page/limit
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/posts']],
+            ['input' => ['type' => 'hidden', 'name' => 'category', 'value' => 'tech']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '25', 'selected' => 'selected']],
+            '25',
+            '/option',
+            ['option' => ['value' => '100']],
+            '100',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * Test limitControl with deeply nested query parameters (3+ levels).
+     * This verifies the recursive implementation handles arbitrary nesting.
+     */
+    public function testLimitControlWithDeeplyNestedParams(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/posts?filter[date][start]=2024-01-01&filter[date][end]=2024-12-31&filter[status]=active',
+            'params' => [
+                'plugin' => null, 'controller' => 'Posts', 'action' => 'index', 'pass' => [],
+            ],
+            'query' => [
+                'filter' => [
+                    'date' => [
+                        'start' => '2024-01-01',
+                        'end' => '2024-12-31',
+                    ],
+                    'status' => 'active',
+                ],
+            ],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+        $this->View->setRequest($request);
+        $this->setPaginatedResult(['perPage' => 20, 'currentPage' => 1]);
+
+        $out = $this->Paginator->limitControl([20 => 20, 50 => 50]);
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/posts']],
+            ['input' => ['type' => 'hidden', 'name' => 'filter[date][start]', 'value' => '2024-01-01']],
+            ['input' => ['type' => 'hidden', 'name' => 'filter[date][end]', 'value' => '2024-12-31']],
+            ['input' => ['type' => 'hidden', 'name' => 'filter[status]', 'value' => 'active']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '20', 'selected' => 'selected']],
+            '20',
+            '/option',
+            ['option' => ['value' => '50']],
+            '50',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * Test that limitControl() filters out limits exceeding maxLimit
+     */
+    public function testLimitControlWithMaxLimit(): void
+    {
+        $this->setPaginatedResult(['perPage' => 20, 'maxLimit' => 50]);
+
+        $out = $this->Paginator->limitControl([20 => 20, 50 => 50, 100 => 100, 200 => 200]);
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '20', 'selected' => 'selected']],
+            '20',
+            '/option',
+            ['option' => ['value' => '50']],
+            '50',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * Test that limitControl() uses default limits when maxLimit filters them all out
+     */
+    public function testLimitControlWithLowMaxLimit(): void
+    {
+        $this->setPaginatedResult(['perPage' => 10, 'maxLimit' => 25]);
+
+        // Default limits are 20, 50, 100 - with maxLimit 25, only 20 should remain
+        $out = $this->Paginator->limitControl();
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '20']],
+            '20',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * Test that limitControl() works normally when no maxLimit is set
+     */
+    public function testLimitControlWithoutMaxLimit(): void
+    {
+        $this->setPaginatedResult(['perPage' => 20]);
+
+        // Without maxLimit, all provided limits should be available
+        $out = $this->Paginator->limitControl([20 => 20, 50 => 50, 100 => 100, 200 => 200]);
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '20', 'selected' => 'selected']],
+            '20',
+            '/option',
+            ['option' => ['value' => '50']],
+            '50',
+            '/option',
+            ['option' => ['value' => '100']],
+            '100',
+            '/option',
+            ['option' => ['value' => '200']],
+            '200',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * Test that limitControl() adds maxLimit as option when all limits are filtered out
+     */
+    public function testLimitControlWithMaxLimitBelowAllDefaults(): void
+    {
+        $this->setPaginatedResult(['perPage' => 10, 'maxLimit' => 10]);
+
+        // Default limits are 20, 50, 100 - all exceed maxLimit of 10
+        // Should fallback to showing maxLimit (10) as the only option
+        $out = $this->Paginator->limitControl();
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '10', 'selected' => 'selected']],
+            '10',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * Test that limitControl() generates options based on steps
+     */
+    public function testLimitControlWithSteps(): void
+    {
+        $this->setPaginatedResult(['perPage' => 20, 'maxLimit' => 50]);
+
+        // Generate limits in steps of 10 up to maxLimit (50)
+        $out = $this->Paginator->limitControl([], null, ['steps' => 10]);
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '10']],
+            '10',
+            '/option',
+            ['option' => ['value' => '20', 'selected' => 'selected']],
+            '20',
+            '/option',
+            ['option' => ['value' => '30']],
+            '30',
+            '/option',
+            ['option' => ['value' => '40']],
+            '40',
+            '/option',
+            ['option' => ['value' => '50']],
+            '50',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * Test that limitControl() with steps uses 100 as default upper limit when no maxLimit
+     */
+    public function testLimitControlWithStepsNoMaxLimit(): void
+    {
+        $this->setPaginatedResult(['perPage' => 25]);
+
+        // Generate limits in steps of 25 up to default 100
+        $out = $this->Paginator->limitControl([], null, ['steps' => 25]);
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '25', 'selected' => 'selected']],
+            '25',
+            '/option',
+            ['option' => ['value' => '50']],
+            '50',
+            '/option',
+            ['option' => ['value' => '75']],
+            '75',
+            '/option',
+            ['option' => ['value' => '100']],
+            '100',
+            '/option',
+            '/select',
+            '/div',
+            '/form',
+        ];
+        $this->assertHtml($expected, $out);
+    }
+
+    /**
+     * Test that limitControl() throws exception when both steps and explicit limits are provided
+     */
+    public function testLimitControlWithStepsAndExplicitLimits(): void
+    {
+        $this->setPaginatedResult(['perPage' => 20]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Cannot use both `steps` option and explicit `$limits` array');
+
+        // Should throw exception when using both steps and explicit limits
+        $this->Paginator->limitControl([20 => 20, 50 => 50], null, ['steps' => 10]);
+    }
+
+    /**
+     * test limitControl() preserves passed params in form action
+     */
+    public function testLimitControlWithPassedParams(): void
+    {
+        $request = new ServerRequest([
+            'url' => '/users/details/517?param1=test',
+            'params' => [
+                'plugin' => null, 'controller' => 'Users', 'action' => 'details', 'pass' => ['517'],
+            ],
+            'query' => ['param1' => 'test'],
+            'base' => '',
+            'webroot' => '/',
+        ]);
+        Router::setRequest($request);
+        $this->View->setRequest($request);
+        $this->setPaginatedResult(['perPage' => 10, 'currentPage' => 1]);
+
+        $out = $this->Paginator->limitControl([10 => 10]);
+        $expected = [
+            ['form' => ['method' => 'get', 'accept-charset' => 'utf-8', 'action' => '/users/details/517']],
+            ['input' => ['type' => 'hidden', 'name' => 'param1', 'value' => 'test']],
+            ['div' => ['class' => 'input select']],
+            ['label' => ['for' => 'limit']],
+            'View',
+            '/label',
+            ['select' => ['name' => 'limit', 'id' => 'limit', 'onChange' => 'this.form.requestSubmit()']],
+            ['option' => ['value' => '10', 'selected' => 'selected']],
+            '10',
             '/option',
             '/select',
             '/div',

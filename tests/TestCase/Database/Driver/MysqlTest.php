@@ -22,6 +22,7 @@ use Cake\Datasource\ConnectionManager;
 use Cake\TestSuite\TestCase;
 use Mockery;
 use PDO;
+use Pdo\Mysql as PdoMysql;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
@@ -44,9 +45,10 @@ class MysqlTest extends TestCase
      */
     public function testConnectionConfigDefault(): void
     {
-        $driver = $this->getMockBuilder(Mysql::class)
-            ->onlyMethods(['createPdo'])
-            ->getMock();
+        $driver = Mockery::mock(Mysql::class)
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $driver->__construct();
         $dsn = 'mysql:host=localhost;port=3306;dbname=cake;charset=utf8mb4';
         $expected = [
             'persistent' => true,
@@ -62,14 +64,17 @@ class MysqlTest extends TestCase
             'log' => false,
         ];
 
+        $usebufferedQueryId = PHP_VERSION_ID < 80400 ? PDO::MYSQL_ATTR_USE_BUFFERED_QUERY : PdoMysql::ATTR_USE_BUFFERED_QUERY;
         $expected['flags'] += [
             PDO::ATTR_PERSISTENT => true,
-            PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+            $usebufferedQueryId => true,
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         ];
 
-        $driver->expects($this->once())->method('createPdo')
-            ->with($dsn, $expected);
+        $driver->shouldReceive('createPdo')
+            ->with($dsn, $expected)
+            ->once()
+            ->andReturn(Mockery::mock(PDO::class));
 
         $driver->connect();
     }
@@ -79,6 +84,8 @@ class MysqlTest extends TestCase
      */
     public function testConnectionConfigCustom(): void
     {
+        $initCommandId = PHP_VERSION_ID < 80400 ? PDO::MYSQL_ATTR_INIT_COMMAND : PdoMysql::ATTR_INIT_COMMAND;
+        $usebufferedQueryId = PHP_VERSION_ID < 80400 ? PDO::MYSQL_ATTR_USE_BUFFERED_QUERY : PdoMysql::ATTR_USE_BUFFERED_QUERY;
         $config = [
             'persistent' => false,
             'host' => 'foo',
@@ -86,7 +93,7 @@ class MysqlTest extends TestCase
             'username' => 'user',
             'password' => 'pass',
             'port' => 3440,
-            'flags' => [PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8'],
+            'flags' => [$initCommandId => 'SET NAMES utf8'],
             'encoding' => null,
             'timezone' => 'Antarctica',
             'init' => [
@@ -95,17 +102,17 @@ class MysqlTest extends TestCase
             ],
             'log' => false,
         ];
-        $driver = $this->getMockBuilder(Mysql::class)
-            ->onlyMethods(['createPdo'])
-            ->setConstructorArgs([$config])
-            ->getMock();
+        $driver = Mockery::mock(Mysql::class)
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $driver->__construct($config);
         $dsn = 'mysql:host=foo;port=3440;dbname=bar';
         $expected = $config;
         $expected['init'][] = "SET time_zone = 'Antarctica'";
         $expected['flags'] += [
-            PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8',
+            $initCommandId => 'SET NAMES utf8',
             PDO::ATTR_PERSISTENT => false,
-            PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+            $usebufferedQueryId => true,
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         ];
 
@@ -114,9 +121,10 @@ class MysqlTest extends TestCase
         $connection->shouldReceive('exec')->with('this too')->once();
         $connection->shouldReceive('exec')->with("SET time_zone = 'Antarctica'")->once();
 
-        $driver->expects($this->once())->method('createPdo')
+        $driver->shouldReceive('createPdo')
             ->with($dsn, $expected)
-            ->willReturn($connection);
+            ->once()
+            ->andReturn($connection);
         $driver->connect();
     }
 
@@ -169,24 +177,20 @@ class MysqlTest extends TestCase
     #[DataProvider('versionStringProvider')]
     public function testVersion($dbVersion, $expectedVersion): void
     {
-        /** @var \PHPUnit\Framework\MockObject\MockObject&\PDO $connection */
-        $connection = $this->getMockBuilder(PDO::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['getAttribute'])
-            ->getMock();
-        $connection->expects($this->once())
-            ->method('getAttribute')
+        $connection = Mockery::mock(PDO::class);
+        $connection->shouldReceive('getAttribute')
             ->with(PDO::ATTR_SERVER_VERSION)
-            ->willReturn($dbVersion);
+            ->once()
+            ->andReturn($dbVersion);
 
-        /** @var \PHPUnit\Framework\MockObject\MockObject&\Cake\Database\Driver\Mysql $driver */
-        $driver = $this->getMockBuilder(Mysql::class)
-            ->onlyMethods(['createPdo'])
-            ->getMock();
+        $driver = Mockery::mock(Mysql::class)
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $driver->__construct();
 
-        $driver->expects($this->once())
-            ->method('createPdo')
-            ->willReturn($connection);
+        $driver->shouldReceive('createPdo')
+            ->once()
+            ->andReturn($connection);
 
         $result = $driver->version();
         $this->assertSame($expectedVersion, $result);

@@ -284,13 +284,13 @@ class EntityTest extends TestCase
      */
     public function testConstructorWithGuard(): void
     {
-        $entity = $this->getMockBuilder(Entity::class)
-            ->onlyMethods(['patch'])
-            ->disableOriginalConstructor()
-            ->getMock();
-        $entity->expects($this->once())
-            ->method('patch')
-            ->with(['foo' => 'bar'], ['setter' => true, 'guard' => true, 'asOriginal' => true]);
+        $entity = Mockery::mock(Entity::class)->makePartial();
+
+        $entity
+            ->shouldReceive('patch')
+            ->with(['foo' => 'bar'], ['setter' => true, 'guard' => true, 'asOriginal' => true])
+            ->once();
+
         $entity->__construct(['foo' => 'bar'], ['guard' => true]);
     }
 
@@ -311,7 +311,26 @@ class EntityTest extends TestCase
 
         $entity = new Entity();
         $entity->requireFieldPresence();
-        $entity->get('not_present');
+        $entity->{'not_present'};
+    }
+
+    public function testGetOrFailException(): void
+    {
+        $this->expectException(MissingPropertyException::class);
+        $this->expectExceptionMessage('Property `not_present` does not exist for the entity `Cake\ORM\Entity`');
+
+        $entity = new Entity();
+        $entity->getRequiredOrFail('not_present');
+    }
+
+    /**
+     * Test to ensure that requireFieldPresence does not affect get
+     */
+    public function testGetNoException(): void
+    {
+        $entity = new Entity();
+        $entity->requireFieldPresence();
+        $this->assertNull($entity->get('not_present'));
     }
 
     public function testRequirePresenceNoException(): void
@@ -558,13 +577,11 @@ class EntityTest extends TestCase
      */
     public function testMagicUnset(): void
     {
-        $entity = $this->getMockBuilder(Entity::class)
-            ->onlyMethods(['unset'])
-            ->getMock();
-        $entity->expects($this->once())
-            ->method('unset')
-            ->with('foo');
+        $entity = new Entity(['foo' => 'bar']);
+
         unset($entity->foo);
+
+        $this->assertFalse($entity->has('foo'));
     }
 
     /**
@@ -623,14 +640,11 @@ class EntityTest extends TestCase
      */
     public function testUnsetArrayAccess(): void
     {
-        /** @var \Cake\ORM\Entity|\PHPUnit\Framework\MockObject\MockObject $entity */
-        $entity = $this->getMockBuilder(Entity::class)
-            ->onlyMethods(['unset'])
-            ->getMock();
-        $entity->expects($this->once())
-            ->method('unset')
-            ->with('foo');
+        $entity = new Entity(['foo' => 'bar']);
+
         unset($entity['foo']);
+
+        $this->assertFalse($entity->has('foo'));
     }
 
     /**
@@ -712,13 +726,10 @@ class EntityTest extends TestCase
      */
     public function testJsonSerializeRecursive(): void
     {
-        $phone = $this->getMockBuilder(Entity::class)
-            ->onlyMethods(['jsonSerialize'])
-            ->getMock();
-        $phone->expects($this->once())->method('jsonSerialize')->willReturn(['something']);
+        $phone = new Entity(['something' => true]);
         $data = ['name' => 'James', 'age' => 20, 'phone' => $phone];
         $entity = new Entity($data);
-        $expected = ['name' => 'James', 'age' => 20, 'phone' => ['something']];
+        $expected = ['name' => 'James', 'age' => 20, 'phone' => ['something' => true]];
         $this->assertEquals(json_encode($expected), json_encode($entity));
     }
 
@@ -817,6 +828,74 @@ class EntityTest extends TestCase
     }
 
     /**
+     * Tests that setting an object value when existing field is scalar
+     * correctly marks field as dirty without raising PHP notices.
+     *
+     * This tests the fix for a bug where isModified() compared an object
+     * to a scalar using loose equality, causing PHP 8+ to raise notices
+     * like "Object of class X could not be converted to float".
+     */
+    public function testDirtyObjectReplacingScalar(): void
+    {
+        $entity = new Entity([
+            'amount' => 10.50,
+        ], ['markClean' => true]);
+
+        $this->assertFalse($entity->isDirty('amount'));
+
+        // Create an object that represents the same value but as object type.
+        // In real usage this would be something like BigDecimal.
+        $objectValue = new class (10.50) {
+            public function __construct(private float $value)
+            {
+            }
+
+            public function getValue(): float
+            {
+                return $this->value;
+            }
+        };
+
+        // Setting object value when existing is scalar should:
+        // 1. Not raise a PHP notice (object-to-scalar comparison)
+        // 2. Mark the field as dirty (types differ)
+        $entity->set('amount', $objectValue);
+
+        // Field should be dirty because we're changing from scalar to object
+        $this->assertTrue($entity->isDirty('amount'));
+    }
+
+    /**
+     * Tests that setting an equivalent object when existing field is also an object
+     * correctly detects no change (field remains clean).
+     */
+    public function testDirtyObjectReplacingEquivalentObject(): void
+    {
+        $objectValue = new stdClass();
+        $objectValue->value = 10.50;
+
+        $entity = new Entity([
+            'amount' => $objectValue,
+        ], ['markClean' => true]);
+
+        $this->assertFalse($entity->isDirty('amount'));
+
+        // Create an equivalent object (same properties, same values)
+        $equivalentObject = new stdClass();
+        $equivalentObject->value = 10.50;
+
+        // Setting equivalent object should NOT mark field dirty
+        $entity->set('amount', $equivalentObject);
+        $this->assertFalse($entity->isDirty('amount'));
+
+        // Setting different object SHOULD mark field dirty
+        $differentObject = new stdClass();
+        $differentObject->value = 20.00;
+        $entity->set('amount', $differentObject);
+        $this->assertTrue($entity->isDirty('amount'));
+    }
+
+    /**
      * Tests extract only dirty properties
      */
     public function testExtractDirty(): void
@@ -897,19 +976,13 @@ class EntityTest extends TestCase
      */
     public function testConstructorWithClean(): void
     {
-        $entity = $this->getMockBuilder(Entity::class)
-            ->onlyMethods(['clean'])
-            ->disableOriginalConstructor()
-            ->getMock();
-        $entity->expects($this->never())->method('clean');
-        $entity->__construct(['a' => 'b', 'c' => 'd']);
+        $entity = new Entity(['a' => 'b', 'c' => 'd']);
+        $this->assertTrue($entity->isDirty('a'));
+        $this->assertTrue($entity->isDirty('c'));
 
-        $entity = $this->getMockBuilder(Entity::class)
-            ->onlyMethods(['clean'])
-            ->disableOriginalConstructor()
-            ->getMock();
-        $entity->expects($this->once())->method('clean');
-        $entity->__construct(['a' => 'b', 'c' => 'd'], ['markClean' => true]);
+        $entity = new Entity(['a' => 'b', 'c' => 'd'], ['markClean' => true]);
+        $this->assertFalse($entity->isDirty('a'));
+        $this->assertFalse($entity->isDirty('c'));
     }
 
     /**
@@ -917,19 +990,14 @@ class EntityTest extends TestCase
      */
     public function testConstructorWithMarkNew(): void
     {
-        $entity = $this->getMockBuilder(Entity::class)
-            ->onlyMethods(['setNew', 'clean'])
-            ->disableOriginalConstructor()
-            ->getMock();
-        $entity->expects($this->never())->method('clean');
-        $entity->__construct(['a' => 'b', 'c' => 'd']);
+        $entity = new Entity(['a' => 'b', 'c' => 'd']);
+        $this->assertTrue($entity->isNew());
 
-        $entity = $this->getMockBuilder(Entity::class)
-            ->onlyMethods(['setNew'])
-            ->disableOriginalConstructor()
-            ->getMock();
-        $entity->expects($this->once())->method('setNew');
-        $entity->__construct(['a' => 'b', 'c' => 'd'], ['markNew' => true]);
+        $entity = new Entity(['a' => 'b', 'c' => 'd'], ['markNew' => false]);
+        $this->assertFalse($entity->isNew());
+
+        $entity = new Entity(['a' => 'b', 'c' => 'd'], ['markNew' => true]);
+        $this->assertTrue($entity->isNew());
     }
 
     /**
@@ -1151,6 +1219,47 @@ class EntityTest extends TestCase
         ];
         $result = $entity->getErrors();
         $this->assertEquals($expectedIndexed, $result);
+    }
+
+    /**
+     * Tests that setError with dotted paths creates nested structure
+     */
+    public function testSetErrorDottedPath(): void
+    {
+        $entity = new Entity();
+        $entity->setError('patients._ids', ['dummyRule' => 'Error message']);
+
+        // Should create nested structure that can be retrieved with dotted path
+        $expected = ['dummyRule' => 'Error message'];
+        $this->assertEquals($expected, $entity->getError('patients._ids'));
+
+        // Should also work with getErrors()
+        $expected = [
+            'patients' => [
+                '_ids' => ['dummyRule' => 'Error message'],
+            ],
+        ];
+        $this->assertEquals($expected, $entity->getErrors());
+
+        // Test deeper nesting
+        $entity = new Entity();
+        $entity->setError('foo.bar.baz', 'deep error');
+
+        $this->assertEquals(['deep error'], $entity->getError('foo.bar.baz'));
+        $expected = [
+            'foo' => [
+                'bar' => [
+                    'baz' => ['deep error'],
+                ],
+            ],
+        ];
+        $this->assertEquals($expected, $entity->getErrors());
+
+        // Test with string error message
+        $entity = new Entity();
+        $entity->setError('field.subfield', 'simple message');
+
+        $this->assertEquals(['simple message'], $entity->getError('field.subfield'));
     }
 
     /**
@@ -1613,31 +1722,33 @@ class EntityTest extends TestCase
      */
     public function testIsEmpty(): void
     {
-        $entity = new Entity([
-            'array' => ['foo' => 'bar'],
-            'emptyArray' => [],
-            'object' => new stdClass(),
-            'string' => 'string',
-            'stringZero' => '0',
-            'emptyString' => '',
-            'intZero' => 0,
-            'intNotZero' => 1,
-            'floatZero' => 0.0,
-            'floatNonZero' => 1.5,
-            'null' => null,
-        ]);
+        $this->deprecated(function (): void {
+            $entity = new Entity([
+                'array' => ['foo' => 'bar'],
+                'emptyArray' => [],
+                'object' => new stdClass(),
+                'string' => 'string',
+                'stringZero' => '0',
+                'emptyString' => '',
+                'intZero' => 0,
+                'intNotZero' => 1,
+                'floatZero' => 0.0,
+                'floatNonZero' => 1.5,
+                'null' => null,
+            ]);
 
-        $this->assertFalse($entity->isEmpty('array'));
-        $this->assertTrue($entity->isEmpty('emptyArray'));
-        $this->assertFalse($entity->isEmpty('object'));
-        $this->assertFalse($entity->isEmpty('string'));
-        $this->assertFalse($entity->isEmpty('stringZero'));
-        $this->assertTrue($entity->isEmpty('emptyString'));
-        $this->assertFalse($entity->isEmpty('intZero'));
-        $this->assertFalse($entity->isEmpty('intNotZero'));
-        $this->assertFalse($entity->isEmpty('floatZero'));
-        $this->assertFalse($entity->isEmpty('floatNonZero'));
-        $this->assertTrue($entity->isEmpty('null'));
+            $this->assertFalse($entity->isEmpty('array'));
+            $this->assertTrue($entity->isEmpty('emptyArray'));
+            $this->assertFalse($entity->isEmpty('object'));
+            $this->assertFalse($entity->isEmpty('string'));
+            $this->assertFalse($entity->isEmpty('stringZero'));
+            $this->assertTrue($entity->isEmpty('emptyString'));
+            $this->assertFalse($entity->isEmpty('intZero'));
+            $this->assertFalse($entity->isEmpty('intNotZero'));
+            $this->assertFalse($entity->isEmpty('floatZero'));
+            $this->assertFalse($entity->isEmpty('floatNonZero'));
+            $this->assertTrue($entity->isEmpty('null'));
+        });
     }
 
     /**
@@ -1682,7 +1793,7 @@ class EntityTest extends TestCase
         $this->assertSame(true, $return);
 
         $entity = new Entity([]);
-        $entity->set('foo', null);
+        $entity->set('foo');
         $return = $entity->isOriginalField('foo');
         $this->assertSame(false, $return);
 

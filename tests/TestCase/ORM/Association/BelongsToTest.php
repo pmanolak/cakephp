@@ -43,12 +43,12 @@ class BelongsToTest extends TestCase
     protected array $fixtures = ['core.Articles', 'core.Authors', 'core.Comments'];
 
     /**
-     * @var \Cake\ORM\Table|\PHPUnit\Framework\MockObject\MockObject
+     * @var \Cake\ORM\Table
      */
     protected $company;
 
     /**
-     * @var \Cake\ORM\Table|\PHPUnit\Framework\MockObject\MockObject
+     * @var \Cake\ORM\Table
      */
     protected $client;
 
@@ -294,17 +294,14 @@ class BelongsToTest extends TestCase
      */
     public function testCascadeDelete(): void
     {
-        $mock = $this->getMockBuilder(Table::class)
-            ->disableOriginalConstructor()
-            ->getMock();
+        /** @var \Cake\ORM\Table&\Mockery\MockInterface $mock */
+        $mock = Mockery::mock(Table::class);
         $config = [
             'sourceTable' => $this->client,
             'targetTable' => $mock,
         ];
-        $mock->expects($this->never())
-            ->method('find');
-        $mock->expects($this->never())
-            ->method('delete');
+        $mock->shouldReceive('find')->never();
+        $mock->shouldReceive('delete')->never();
 
         $association = new BelongsTo('Companies', $config);
         $entity = new Entity(['company_name' => 'CakePHP', 'id' => 1]);
@@ -341,7 +338,7 @@ class BelongsToTest extends TestCase
      */
     public function testPropertyOption(): void
     {
-        $config = ['propertyName' => 'thing_placeholder'];
+        $config = ['propertyName' => 'thing_placeholder', 'sourceTable' => $this->client];
         $association = new BelongsTo('Thing', $config);
         $this->assertSame('thing_placeholder', $association->getProperty());
     }
@@ -351,12 +348,9 @@ class BelongsToTest extends TestCase
      */
     public function testPropertyNoPlugin(): void
     {
-        $mock = $this->getMockBuilder(Table::class)
-            ->disableOriginalConstructor()
-            ->getMock();
         $config = [
             'sourceTable' => $this->client,
-            'targetTable' => $mock,
+            'targetTable' => $this->company,
         ];
         $association = new BelongsTo('Contacts.Companies', $config);
         $this->assertSame('company', $association->getProperty());

@@ -25,6 +25,7 @@ use Cake\ORM\Query\QueryFactory;
 use Cake\ORM\Table;
 use Cake\TestSuite\TestCase;
 use Cake\Validation\Validator;
+use Mockery;
 use ReflectionProperty;
 use TestApp\Infrastructure\Table\AddressesTable;
 use TestApp\Model\Entity\Article;
@@ -349,7 +350,10 @@ class TableLocatorTest extends TestCase
      */
     public function testGetMultiplePlugins(): void
     {
-        $this->loadPlugins(['TestPlugin', 'TestPluginTwo']);
+        // Removed the deprecated() wrapping when plugin class is added to TestPlugin
+        $this->deprecated(function (): void {
+            $this->loadPlugins(['TestPlugin', 'TestPluginTwo']);
+        });
 
         $app = $this->_locator->get('Comments');
         $plugin1 = $this->_locator->get('TestPlugin.Comments');
@@ -485,7 +489,7 @@ class TableLocatorTest extends TestCase
      */
     public function testSet(): void
     {
-        $mock = $this->getMockBuilder(Table::class)->getMock();
+        $mock = Mockery::mock(Table::class);
         $this->assertSame($mock, $this->_locator->set('Articles', $mock));
         $this->assertSame($mock, $this->_locator->get('Articles'));
     }
@@ -497,7 +501,7 @@ class TableLocatorTest extends TestCase
     {
         $this->loadPlugins(['TestPlugin']);
 
-        $mock = $this->getMockBuilder(CommentsTable::class)->getMock();
+        $mock = Mockery::mock(CommentsTable::class);
 
         $this->assertSame($mock, $this->_locator->set('TestPlugin.Comments', $mock));
         $this->assertSame($mock, $this->_locator->get('TestPlugin.Comments'));
@@ -543,7 +547,10 @@ class TableLocatorTest extends TestCase
      */
     public function testRemovePlugin(): void
     {
-        $this->loadPlugins(['TestPlugin', 'TestPluginTwo']);
+        // Removed the deprecated() wrapping when plugin class is added to TestPluginTwo
+        $this->deprecated(function (): void {
+            $this->loadPlugins(['TestPlugin', 'TestPluginTwo']);
+        });
 
         $app = $this->_locator->get('Comments');
         $this->_locator->get('TestPlugin.Comments');
@@ -679,8 +686,11 @@ class TableLocatorTest extends TestCase
     public function testInstanceSetButNotOptions(): void
     {
         $this->setTableLocator($this->_locator);
-        $mock = $this->getMockForModel('Articles', ['findPublished']);
+        $mock = $this->getMockForModel('Articles', ['setAlias']);
         $table = $this->_locator->get('Articles', ['className' => ArticlesTable::class]);
+
+        // This is just to avoid phpunit's deprecation notice.
+        $mock->expects($this->never())->method('setAlias');
 
         $this->assertSame($table, $mock);
     }

@@ -627,7 +627,7 @@ class CounterCacheBehaviorTest extends TestCase
         $this->post->addBehavior('CounterCache', [
             'Users' => [
                 'post_count',
-                'dummy' => function () {
+                'dummy' => function (): void {
                     throw new Exception('Closures are never called by "updateCounterCache()"');
                 },
             ],
@@ -638,7 +638,7 @@ class CounterCacheBehaviorTest extends TestCase
         $user = $this->_getUser(1);
         $this->assertSame(0, $user->get('post_count'));
 
-        $this->post->updateCounterCache('Users');
+        $this->post->getBehavior('CounterCache')->updateCounterCache('Users');
 
         $user = $this->_getUser(1);
         $this->assertSame(2, $user->get('post_count'));
@@ -647,12 +647,33 @@ class CounterCacheBehaviorTest extends TestCase
 
         $this->user->updateAll(['post_count' => 0], []);
 
-        $this->post->updateCounterCache(limit: 1, page: 2);
+        $this->post->getBehavior('CounterCache')->updateCounterCache(limit: 1, page: 2);
 
         $user = $this->_getUser(1);
         $this->assertSame(0, $user->get('post_count'));
         $user = $this->_getUser(2);
         $this->assertSame(1, $user->get('post_count'));
+    }
+
+    public function testUpdateCounterCacheSkipsClosureButContinues(): void
+    {
+        $this->post->belongsTo('Users');
+        $this->post->addBehavior('CounterCache', [
+            'Users' => [
+                'posts_published' => function (): void {
+                    // Should be skipped
+                },
+                'post_count',
+            ],
+        ]);
+
+        $this->user->updateAll(['post_count' => 0], []);
+        $this->post->getBehavior('CounterCache')->updateCounterCache('Users');
+
+        $user = $this->_getUser(1);
+        // With "return": post_count stays 0 (buggy behavior)
+        // With "continue": post_count becomes 2 (correct behavior)
+        $this->assertSame(2, $user->get('post_count'));
     }
 
     /**

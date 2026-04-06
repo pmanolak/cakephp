@@ -25,17 +25,13 @@ use Cake\Console\TestSuite\StubConsoleInput;
 use Cake\Console\TestSuite\StubConsoleOutput;
 use Cake\TestSuite\TestCase;
 use LogicException;
-use PHPUnit\Framework\Attributes\WithoutErrorHandler;
 
 /**
  * ConsoleOptionParserTest
  */
 class ConsoleOptionParserTest extends TestCase
 {
-    /**
-     * @var \Cake\Console\ConsoleIo
-     */
-    private $io;
+    private ConsoleIo $io;
 
     protected function setUp(): void
     {
@@ -99,7 +95,6 @@ class ConsoleOptionParserTest extends TestCase
     /**
      * test removing an option clears also shortOption.
      */
-    #[WithoutErrorHandler]
     public function testRemoveOptionAlsoClearsShort(): void
     {
         $parser = new ConsoleOptionParser('test', false);
@@ -222,7 +217,7 @@ class ConsoleOptionParserTest extends TestCase
     }
 
     /**
-     * test adding an option and using the short value for parsing throws deprecation if conflicting.
+     * test adding an option with a conflicting short value throws an exception.
      */
     public function testAddOptionShortConflict(): void
     {
@@ -231,11 +226,12 @@ class ConsoleOptionParserTest extends TestCase
             'short' => 't',
         ]);
 
-        $this->deprecated(function () use ($parser) {
-            $parser->addOption('other', [
-                'short' => 't',
-            ]);
-        });
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Short option `t` is already defined for option `test`.');
+
+        $parser->addOption('other', [
+            'short' => 't',
+        ]);
     }
 
     /**

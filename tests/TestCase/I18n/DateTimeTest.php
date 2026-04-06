@@ -51,7 +51,7 @@ class DateTimeTest extends TestCase
     {
         parent::tearDown();
         DateTime::setTestNow($this->now);
-        DateTime::setDefaultLocale(null);
+        DateTime::setDefaultLocale();
         DateTime::resetToStringFormat();
         DateTime::setJsonEncodeFormat("yyyy-MM-dd'T'HH':'mm':'ssxxx");
 
@@ -207,7 +207,7 @@ class DateTimeTest extends TestCase
             'accuracy' => ['year' => 'year'],
             'end' => '+2 months',
         ]);
-        $expected = 'exactly on ' . date('n/j/y', strtotime('+4 months +2 weeks +3 days'));
+        $expected = 'exactly on ' . $time->format('n/j/y');
         $this->assertSame($expected, $result);
     }
 
@@ -290,7 +290,7 @@ class DateTimeTest extends TestCase
 
         $time = new DateTime('+2 months +2 days');
         $result = $time->timeAgoInWords(['end' => '1 month', 'format' => 'yyyy-MM-dd']);
-        $this->assertSame('on ' . date('Y-m-d', strtotime('+2 months +2 days')), $result);
+        $this->assertSame('on ' . $time->format('Y-m-d'), $result);
     }
 
     /**
@@ -308,7 +308,7 @@ class DateTimeTest extends TestCase
 
         $time = new DateTime('-2 months -2 days');
         $result = $time->timeAgoInWords(['end' => '1 month', 'format' => 'yyyy-MM-dd']);
-        $this->assertSame('on ' . date('Y-m-d', strtotime('-2 months -2 days')), $result);
+        $this->assertSame('on ' . $time->format('Y-m-d'), $result);
 
         $time = new DateTime('-2 years -5 months -2 days');
         $result = $time->timeAgoInWords(['end' => '3 years']);
@@ -826,6 +826,54 @@ class DateTimeTest extends TestCase
     {
         DateTime::setDefaultLocale('fr-FR');
         $this->assertSame('fr-FR', DateTime::getDefaultLocale());
+    }
+
+    /**
+     * Test toQuarter method
+     */
+    public function testToQuarter(): void
+    {
+        $date = new DateTime('2007-12-25');
+        $this->assertSame(4, $date->toQuarter());
+
+        $date = new DateTime('2007-01-01');
+        $this->assertSame(1, $date->toQuarter());
+
+        $date = new DateTime('2007-05-15');
+        $this->assertSame(2, $date->toQuarter());
+
+        $date = new DateTime('2007-08-20');
+        $this->assertSame(3, $date->toQuarter());
+    }
+
+    /**
+     * Test toQuarter with deprecated range parameter
+     */
+    public function testToQuarterWithRange(): void
+    {
+        $this->deprecated(function (): void {
+            $date = new DateTime('2007-12-25');
+            $result = $date->toQuarter(true);
+            $this->assertEquals(['2007-10-01', '2007-12-31'], $result);
+        });
+    }
+
+    /**
+     * Test toQuarterRange method
+     */
+    public function testToQuarterRange(): void
+    {
+        $date = new DateTime('2007-12-25');
+        $this->assertEquals(['2007-10-01', '2007-12-31'], $date->toQuarterRange());
+
+        $date = new DateTime('2007-01-01');
+        $this->assertEquals(['2007-01-01', '2007-03-31'], $date->toQuarterRange());
+
+        $date = new DateTime('2007-05-15');
+        $this->assertEquals(['2007-04-01', '2007-06-30'], $date->toQuarterRange());
+
+        $date = new DateTime('2007-08-20');
+        $this->assertEquals(['2007-07-01', '2007-09-30'], $date->toQuarterRange());
     }
 
     /**

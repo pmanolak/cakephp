@@ -38,10 +38,7 @@ use Throwable;
 
 class ExceptionTrapTest extends TestCase
 {
-    /**
-     * @var string
-     */
-    private $memoryLimit;
+    private string $memoryLimit;
 
     private $triggered = false;
 
@@ -86,7 +83,7 @@ class ExceptionTrapTest extends TestCase
     {
         $output = new StubConsoleOutput();
         $trap = new ExceptionTrap(['stderr' => $output]);
-        $trap->setConfig('exceptionRenderer', null);
+        $trap->deleteConfig('exceptionRenderer');
         $error = new InvalidArgumentException('nope');
         $this->assertInstanceOf(ConsoleExceptionRenderer::class, $trap->renderer($error));
     }
@@ -100,7 +97,7 @@ class ExceptionTrapTest extends TestCase
     public function testLoggerHandleUnsafeOverwrite(): void
     {
         $trap = new ExceptionTrap();
-        $trap->setConfig('logger', null);
+        $trap->deleteConfig('logger');
         $this->assertInstanceOf(ErrorLogger::class, $trap->logger());
     }
 
@@ -317,7 +314,7 @@ class ExceptionTrapTest extends TestCase
     public function testBeforeRenderEventReturnResponse(): void
     {
         $trap = new ExceptionTrap(['exceptionRenderer' => TextExceptionRenderer::class]);
-        $trap->getEventManager()->on('Exception.beforeRender', function (EventInterface $event, Throwable $error, ?ServerRequest $req) {
+        $trap->getEventManager()->on('Exception.beforeRender', function (EventInterface $event, Throwable $error, ?ServerRequest $req): void {
             $event->setResult('Here B Erroz');
         });
 
@@ -364,6 +361,20 @@ class ExceptionTrapTest extends TestCase
 
         $this->assertStringContainsString('500 : Fatal Error', $out);
         $this->assertStringContainsString('Something bad', $out);
+        $this->assertStringContainsString(__FILE__, $out);
+    }
+
+    public function testHandleFatalErrorWhenCompileError(): void
+    {
+        $trap = new ExceptionTrap([
+            'exceptionRenderer' => TextExceptionRenderer::class,
+        ]);
+        ob_start();
+        $trap->handleFatalError(E_COMPILE_ERROR, 'Compile error', __FILE__, __LINE__);
+        $out = ob_get_clean();
+
+        $this->assertStringContainsString('500 : Fatal Error', $out);
+        $this->assertStringContainsString('Compile error', $out);
         $this->assertStringContainsString(__FILE__, $out);
     }
 

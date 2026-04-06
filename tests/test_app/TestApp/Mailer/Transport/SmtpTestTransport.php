@@ -27,27 +27,17 @@ class SmtpTestTransport extends SmtpTransport
     }
 
     /**
-     * Returns only serializable properties
-     *
-     * @return array<string>
-     */
-    public function __sleep()
-    {
-        return array_diff(array_keys(get_object_vars($this)), ['_socket']);
-    }
-
-    /**
      * Magic function to call protected methods
      *
      * @param string $method
      * @param array $args
      * @return mixed
      */
-    public function __call($method, $args)
+    public function __call(string $method, array $args)
     {
         $method = '_' . $method;
 
-        return call_user_func_array($this->$method(...), $args);
+        return $this->$method(...$args);
     }
 
     /**

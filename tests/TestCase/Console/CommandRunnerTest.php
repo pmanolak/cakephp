@@ -26,12 +26,15 @@ use Cake\Console\ConsoleIo;
 use Cake\Console\TestSuite\StubConsoleOutput;
 use Cake\Core\Configure;
 use Cake\Event\EventManager;
+use Cake\Event\EventManagerInterface;
 use Cake\Http\BaseApplication;
 use Cake\Http\MiddlewareQueue;
 use Cake\Routing\Router;
 use Cake\TestSuite\TestCase;
 use Mockery;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use stdClass;
+use TestApp\Application;
 use TestApp\Command\AbortCommand;
 use TestApp\Command\DemoCommand;
 use TestApp\Command\DependencyCommand;
@@ -40,6 +43,7 @@ use TestApp\Command\SampleCommand;
 /**
  * Test case for the CommandCollection
  */
+#[AllowMockObjectsWithoutExpectations]
 class CommandRunnerTest extends TestCase
 {
     /**
@@ -124,23 +128,19 @@ class CommandRunnerTest extends TestCase
     }
 
     /**
-     * Test that running an unknown command gives suggestions.
+     * Test that running a command prefix shows help for those commands.
      */
-    public function testRunInvalidCommandSuggestion(): void
+    public function testRunCommandPrefixShowsHelp(): void
     {
         $output = new StubConsoleOutput();
         $runner = $this->getRunner();
-        $runner->run(['cake', 'cache'], $this->getMockIo($output));
+        $result = $runner->run(['cake', 'cache'], $this->getMockIo($output));
 
+        $this->assertSame(0, $result);
         $messages = implode("\n", $output->messages());
-        $this->assertStringContainsString(
-            "Did you mean: `cache clear`?\n" .
-            "\n" .
-            "Other valid choices:\n" .
-            "\n" .
-            '- help',
-            $messages,
-        );
+        $this->assertStringContainsString('<info>cache:</info>', $messages);
+        $this->assertStringContainsString('cache clear', $messages);
+        $this->assertStringContainsString('cache list', $messages);
     }
 
     /**
@@ -153,9 +153,8 @@ class CommandRunnerTest extends TestCase
         $result = $runner->run(['cake', '--help'], $this->getMockIo($output));
         $this->assertSame(0, $result);
         $messages = implode("\n", $output->messages());
-        $this->assertStringContainsString('Current Paths', $messages);
-        $this->assertStringContainsString('- i18n', $messages);
-        $this->assertStringContainsString('Available Commands', $messages);
+        $this->assertStringContainsString('<info>i18n:</info>', $messages);
+        $this->assertStringContainsString('Available Commands:', $messages);
     }
 
     /**
@@ -168,8 +167,22 @@ class CommandRunnerTest extends TestCase
         $result = $runner->run(['cake', '-h'], $this->getMockIo($output));
         $this->assertSame(0, $result);
         $messages = implode("\n", $output->messages());
-        $this->assertStringContainsString('- i18n', $messages);
-        $this->assertStringContainsString('Available Commands', $messages);
+        $this->assertStringContainsString('<info>i18n:</info>', $messages);
+        $this->assertStringContainsString('Available Commands:', $messages);
+    }
+
+    /**
+     * Test using `cake -v` invokes the verbose help command
+     */
+    public function testRunVerboseShortOption(): void
+    {
+        $output = new StubConsoleOutput();
+        $runner = $this->getRunner();
+        $result = $runner->run(['cake', '-v'], $this->getMockIo($output));
+        $this->assertSame(0, $result);
+        $messages = implode("\n", $output->messages());
+        $this->assertStringContainsString('Available Commands:', $messages);
+        $this->assertStringContainsString('Current Paths', $messages, 'Verbose output should include paths');
     }
 
     /**
@@ -184,8 +197,8 @@ class CommandRunnerTest extends TestCase
         $this->assertSame(0, $result, 'help output is success.');
         $messages = implode("\n", $output->messages());
         $this->assertStringContainsString('No command provided. Choose one of the available commands', $messages);
-        $this->assertStringContainsString('- i18n', $messages);
-        $this->assertStringContainsString('Available Commands', $messages);
+        $this->assertStringContainsString('<info>i18n:</info>', $messages);
+        $this->assertStringContainsString('Available Commands:', $messages);
     }
 
     /**
@@ -345,11 +358,11 @@ class CommandRunnerTest extends TestCase
     {
         $output = new StubConsoleOutput();
         $io = $this->getMockIo($output);
-        $factory = $this->createMock(CommandFactoryInterface::class);
-        $factory->expects($this->once())
-            ->method('create')
+        $factory = Mockery::mock(CommandFactoryInterface::class);
+        $factory->shouldReceive('create')
+            ->once()
             ->with(DemoCommand::class)
-            ->willReturn(new DemoCommand());
+            ->andReturn(new DemoCommand());
 
         $app = $this->makeAppWithCommands(['ex' => DemoCommand::class]);
 
@@ -415,7 +428,7 @@ class CommandRunnerTest extends TestCase
     }
 
     /**
-     * Test that run() fires off the Command.started and Command.finished events.
+     * Test that run() fires off the Command.beforeExecute and Command.afterExecute events.
      */
     public function testRunTriggersCommandEvents(): void
     {
@@ -423,14 +436,16 @@ class CommandRunnerTest extends TestCase
         $runner = $this->getRunner();
         $startedEventTriggered = false;
         $finishedEventTriggered = false;
-        $runner->getEventManager()->on('Command.beforeExecute', function ($event, $args) use (&$startedEventTriggered): void {
+        $runner->getEventManager()->on('Command.beforeExecute', function ($event, $args, $io) use (&$startedEventTriggered): void {
             $this->assertInstanceOf(VersionCommand::class, $event->getSubject());
             $this->assertInstanceOf(Arguments::class, $args);
+            $this->assertInstanceOf(ConsoleIo::class, $io);
             $startedEventTriggered = true;
         });
-        $runner->getEventManager()->on('Command.afterExecute', function ($event, $args, $result) use (&$finishedEventTriggered): void {
+        $runner->getEventManager()->on('Command.afterExecute', function ($event, $args, $io, $result) use (&$finishedEventTriggered): void {
             $this->assertInstanceOf(VersionCommand::class, $event->getSubject());
             $this->assertInstanceOf(Arguments::class, $args);
+            $this->assertInstanceOf(ConsoleIo::class, $io);
             $this->assertEquals(CommandInterface::CODE_SUCCESS, $result);
             $finishedEventTriggered = true;
         });
@@ -480,6 +495,49 @@ class CommandRunnerTest extends TestCase
         $runner = $this->getRunner();
         $runner->run(['cake', '--version'], $this->getMockIo($output));
         $this->assertGreaterThan(2, count(Router::getRouteCollection()->routes()));
+    }
+
+    /**
+     * Test that events registered in EventAwareApplicationInterface methods
+     * are available early during command runner execution.
+     */
+    public function testRunRegistersEventsEarly(): void
+    {
+        $output = new StubConsoleOutput();
+        $app = new class ($this->config) extends Application {
+            public bool $customEventFired = false;
+            public bool $pluginEventFired = false;
+
+            public function events(EventManagerInterface $eventManager): EventManagerInterface
+            {
+                $eventManager->on('Test.customEvent', function (): void {
+                    $this->customEventFired = true;
+                });
+
+                return $eventManager;
+            }
+
+            public function pluginEvents(EventManagerInterface $eventManager): EventManagerInterface
+            {
+                $eventManager->on('Test.pluginEvent', function (): void {
+                    $this->pluginEventFired = true;
+                });
+
+                return $eventManager;
+            }
+        };
+
+        $runner = new CommandRunner($app);
+        $runner->getEventManager()->on('Console.buildCommands', function () use ($runner): void {
+            // Trigger the events that should have been registered by events() and pluginEvents()
+            $runner->getEventManager()->dispatch('Test.customEvent');
+            $runner->getEventManager()->dispatch('Test.pluginEvent');
+        });
+
+        $runner->run(['cake', '--version'], $this->getMockIo($output));
+
+        $this->assertTrue($app->customEventFired, 'Custom event should have been fired');
+        $this->assertTrue($app->pluginEventFired, 'Plugin event should have been fired');
     }
 
     protected function makeAppWithCommands(array $commands): BaseApplication

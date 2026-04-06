@@ -24,6 +24,8 @@ use Cake\Datasource\Paging\NumericPaginator;
 use Cake\Datasource\RepositoryInterface;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\ResultSet;
+use Mockery;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use TestApp\Model\Table\PaginatorPostsTable;
 
@@ -33,11 +35,6 @@ trait PaginatorTestTrait
      * @var \Cake\Datasource\Paging\NumericPaginator
      */
     protected $Paginator;
-
-    /**
-     * @var \Cake\Datasource\RepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
-     */
-    protected $Post;
 
     /**
      * setup
@@ -69,8 +66,6 @@ trait PaginatorTestTrait
                 return parent::checkLimit($options);
             }
         };
-
-        $this->Post = $this->getMockRepository();
     }
 
     /**
@@ -85,20 +80,18 @@ trait PaginatorTestTrait
     /**
      * Test that non-numeric values are rejected for page, and limit
      */
+    #[AllowMockObjectsWithoutExpectations]
     public function testPageParamCasting(): void
     {
-        $this->Post->expects($this->any())
-            ->method('getAlias')
-            ->willReturn('Posts');
-
         $query = $this->_getMockFindQuery();
-        $this->Post->expects($this->any())
-            ->method('find')
-            ->willReturn($query);
+
+        $post = $this->createStub(RepositoryInterface::class);
+        $post->method('getAlias')->willReturn('Posts');
+        $post->method('find')->willReturn($query);
 
         $params = ['page' => '1 " onclick="alert(\'xss\');">'];
         $settings = ['limit' => 1, 'maxLimit' => 10];
-        $result = $this->Paginator->paginate($this->Post, $params, $settings);
+        $result = $this->Paginator->paginate($post, $params, $settings);
         $pagingParams = $result->pagingParams();
         $this->assertSame(1, $pagingParams['currentPage'], 'XSS exploit opened');
     }
@@ -123,8 +116,8 @@ trait PaginatorTestTrait
             ->method('selectQuery')
             ->willReturn($query);
 
-        $query->expects($this->once())
-            ->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 10,
                 'order' => ['PaginatorPosts.id' => 'ASC'],
@@ -198,8 +191,8 @@ trait PaginatorTestTrait
             ->method('selectQuery')
             ->willReturn($query);
 
-        $query->expects($this->once())
-            ->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 10,
                 'page' => 1,
@@ -228,8 +221,8 @@ trait PaginatorTestTrait
             ->method('selectQuery')
             ->willReturn($query);
 
-        $query->expects($this->once())
-            ->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 20,
                 'page' => 1,
@@ -260,8 +253,8 @@ trait PaginatorTestTrait
             ->method('selectQuery')
             ->willReturn($query);
 
-        $query->expects($this->once())
-            ->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 10,
                 'page' => 1,
@@ -618,7 +611,8 @@ trait PaginatorTestTrait
             ->method('selectQuery')
             ->willReturn($query);
 
-        $query->expects($this->once())->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 20,
                 'page' => 1,
@@ -641,13 +635,9 @@ trait PaginatorTestTrait
      */
     public function testValidateSortInvalidDirection(): void
     {
-        $model = $this->getMockRepository();
-        $model->expects($this->any())
-            ->method('getAlias')
-            ->willReturn('model');
-        $model->expects($this->any())
-            ->method('hasField')
-            ->willReturn(true);
+        $model = $this->createStub(RepositoryInterface::class);
+        $model->method('getAlias')->willReturn('model');
+        $model->method('hasField')->willReturn(true);
 
         $options = ['sort' => 'something', 'direction' => 'boogers'];
         $result = $this->Paginator->validateSort($model, $options);
@@ -668,7 +658,8 @@ trait PaginatorTestTrait
             ->method('selectQuery')
             ->willReturn($query);
 
-        $query->expects($this->once())->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 20,
                 'page' => 1,
@@ -701,7 +692,8 @@ trait PaginatorTestTrait
             ->method('selectQuery')
             ->willReturn($query);
 
-        $query->expects($this->once())->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 20,
                 'page' => 1,
@@ -743,7 +735,8 @@ trait PaginatorTestTrait
             ->method('selectQuery')
             ->willReturn($query);
 
-        $query->expects($this->once())->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 20,
                 'page' => 1,
@@ -865,12 +858,9 @@ trait PaginatorTestTrait
      */
     public function testValidateAllowedSortNotInSchema(): void
     {
-        $model = $this->getMockRepository();
-        $model->expects($this->any())
-            ->method('getAlias')
-            ->willReturn('model');
-        $model->expects($this->once())->method('hasField')
-            ->willReturn(false);
+        $model = Mockery::mock(RepositoryInterface::class);
+        $model->shouldReceive('getAlias')->andReturn('model');
+        $model->shouldReceive('hasField')->andReturn(false);
 
         $options = [
             'sort' => 'score',
@@ -911,29 +901,14 @@ trait PaginatorTestTrait
     }
 
     /**
-     * @return \Cake\Datasource\RepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
-     */
-    protected function getMockRepository()
-    {
-        $model = $this->getMockBuilder(RepositoryInterface::class)
-            ->getMock();
-
-        return $model;
-    }
-
-    /**
      * @param string $modelAlias Model alias to use.
-     * @return \Cake\Datasource\RepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
+     * @return \Cake\Datasource\RepositoryInterface
      */
     protected function mockAliasHasFieldModel($modelAlias = 'model')
     {
-        $model = $this->getMockRepository();
-        $model->expects($this->any())
-            ->method('getAlias')
-            ->willReturn($modelAlias);
-        $model->expects($this->any())
-            ->method('hasField')
-            ->willReturn(true);
+        $model = Mockery::mock(RepositoryInterface::class);
+        $model->shouldReceive('getAlias')->andReturn($modelAlias);
+        $model->shouldReceive('hasField')->andReturn(true);
 
         return $model;
     }
@@ -1070,6 +1045,38 @@ trait PaginatorTestTrait
     }
 
     /**
+     * Test that unprefixed sortableFields work correctly with prefixed default order.
+     *
+     * When controller sets prefixed order like `['Articles.modified' => 'DESC']`
+     * and sortableFields uses unprefixed names like `['modified']`, sort toggling
+     * should work correctly without duplicating the field in the order array.
+     */
+    public function testValidateSortUnprefixedFieldsWithPrefixedDefaultOrder(): void
+    {
+        $model = $this->mockAliasHasFieldModel();
+
+        // Controller has prefixed default order but unprefixed sortableFields
+        $options = [
+            'sort' => 'created',
+            'direction' => 'asc',
+            'order' => [
+                'model.created' => 'DESC',
+            ],
+            'sortableFields' => ['created'],
+        ];
+
+        $result = $this->Paginator->validateSort($model, $options);
+
+        // The sort should work - unprefixed 'created' from sortableFields should
+        // be recognized as matching 'model.created' from default order
+        $expected = [
+            'model.created' => 'asc',
+        ];
+        $this->assertSame($expected, $result['order']);
+        $this->assertSame('created', $result['sort']);
+    }
+
+    /**
      * @return array
      */
     public static function checkLimitProvider(): array
@@ -1167,8 +1174,8 @@ trait PaginatorTestTrait
         $table = $this->_getMockPosts(['find']);
         $query = $this->_getMockFindQuery($table);
         $table->expects($this->never())->method('find');
-        $query->expects($this->once())
-            ->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 10,
                 'order' => ['PaginatorPosts.id' => 'ASC'],
@@ -1215,8 +1222,8 @@ trait PaginatorTestTrait
         $query = $this->_getMockFindQuery($table);
         $query->limit(2);
         $table->expects($this->never())->method('find');
-        $query->expects($this->once())
-            ->method('applyOptions')
+        $query->shouldReceive('applyOptions')
+            ->once()
             ->with([
                 'limit' => 5,
                 'order' => ['PaginatorPosts.id' => 'ASC'],
@@ -1253,28 +1260,19 @@ trait PaginatorTestTrait
     /**
      * Helper method for mocking queries.
      *
-     * @param string|null $table
-     * @return \Cake\ORM\Query\SelectQuery|\PHPUnit\Framework\MockObject\MockObject
+     * @param RepositoryInterface|null $table
+     * @return \Cake\ORM\Query\SelectQuery|\Mockery\MockInterface
+     * @throws \PHPUnit\Framework\MockObject\Exception
      */
     protected function _getMockFindQuery($table = null)
     {
-        /** @var \Cake\ORM\Query\SelectQuery|\PHPUnit\Framework\MockObject\MockObject $query */
-        $query = $this->getMockBuilder(SelectQuery::class)
-            ->onlyMethods(['all', 'count', 'applyOptions'])
-            ->disableOriginalConstructor()
-            ->getMock();
+        $query = Mockery::mock(SelectQuery::class)
+            ->makePartial();
 
-        $results = $this->getMockBuilder(ResultSet::class)
-            ->disableOriginalConstructor()
-            ->getMock();
+        $results = $this->createStub(ResultSet::class);
 
-        $query->expects($this->any())
-            ->method('count')
-            ->willReturn(2);
-
-        $query->expects($this->any())
-            ->method('all')
-            ->willReturn($results);
+        $query->shouldReceive('count')->andReturn(2);
+        $query->shouldReceive('all')->andReturn($results);
 
         if ($table) {
             $query->setRepository($table);

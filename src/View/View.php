@@ -71,7 +71,7 @@ use function Cake\Core\pluginSplit;
  * @property \Cake\View\Helper\TimeHelper $Time
  * @property \Cake\View\Helper\UrlHelper $Url
  * @property \Cake\View\ViewBlock $Blocks
- * @implements \Cake\Event\EventDispatcherInterface<\Cake\View\View>
+ * @implements \Cake\Event\EventDispatcherInterface<static>
  */
 class View implements EventDispatcherInterface
 {
@@ -79,7 +79,7 @@ class View implements EventDispatcherInterface
         cell as public;
     }
     /**
-     * @use \Cake\Event\EventDispatcherTrait<\Cake\View\View>
+     * @use \Cake\Event\EventDispatcherTrait<static>
      */
     use EventDispatcherTrait;
     use InstanceConfigTrait;
@@ -215,13 +215,21 @@ class View implements EventDispatcherInterface
     protected string $elementCache = 'default';
 
     /**
+     * The merge strategy for config options.
+     * Can be MERGE_DEEP (recursive merge, default for BC) or MERGE_SHALLOW (simple merge).
+     *
+     * @var string
+     */
+    protected string $configMergeStrategy = ViewBuilder::MERGE_DEEP;
+
+    /**
      * List of variables to collect from the associated controller.
      *
      * @var array<string>
      */
     protected array $_passedVars = [
         'viewVars', 'autoLayout', 'helpers', 'template', 'layout', 'name', 'theme',
-        'layoutPath', 'templatePath', 'plugin',
+        'layoutPath', 'templatePath', 'plugin', 'configMergeStrategy',
     ];
 
     /**
@@ -355,10 +363,16 @@ class View implements EventDispatcherInterface
             $this->helpers = $this->helpers()->normalizeArray($this->helpers);
         }
 
-        $this->setConfig(array_diff_key(
+        $config = array_diff_key(
             $viewOptions,
             array_flip($this->_passedVars),
-        ));
+        );
+
+        if ($this->configMergeStrategy === ViewBuilder::MERGE_SHALLOW) {
+            $this->configShallow($config);
+        } else {
+            $this->setConfig($config);
+        }
 
         $request ??= Router::getRequest() ?: new ServerRequest(['base' => '', 'url' => '', 'webroot' => '/']);
         $this->request = $request;
@@ -1098,7 +1112,7 @@ class View implements EventDispatcherInterface
      * Magic accessor for helpers.
      *
      * @param string $name Name of the attribute to get.
-     * @return \Cake\View\Helper|null
+     * @return \Cake\View\Helper<\Cake\View\View>|null
      */
     public function __get(string $name): ?Helper
     {
@@ -1230,12 +1244,12 @@ class View implements EventDispatcherInterface
      *
      * @param string $name Name of the helper to load.
      * @param array<string, mixed> $config Settings for the helper
-     * @return \Cake\View\Helper a constructed helper object.
+     * @return \Cake\View\Helper<\Cake\View\View> a constructed helper object.
      * @see \Cake\View\HelperRegistry::load()
      */
     public function loadHelper(string $name, array $config = []): Helper
     {
-        /** @var \Cake\View\Helper */
+        /** @var \Cake\View\Helper<\Cake\View\View> */
         return $this->helpers()->load($name, $config);
     }
 
@@ -1485,8 +1499,8 @@ class View implements EventDispatcherInterface
         }
         $layoutPaths = $this->_getSubPaths(static::TYPE_LAYOUT . DIRECTORY_SEPARATOR . $subDir);
 
-        foreach ($this->_paths($plugin) as $path) {
-            foreach ($layoutPaths as $layoutPath) {
+        foreach ($layoutPaths as $layoutPath) {
+            foreach ($this->_paths($plugin) as $path) {
                 yield $path . $layoutPath;
             }
         }
@@ -1522,8 +1536,8 @@ class View implements EventDispatcherInterface
     protected function getElementPaths(?string $plugin): Generator
     {
         $elementPaths = $this->_getSubPaths(static::TYPE_ELEMENT);
-        foreach ($this->_paths($plugin) as $path) {
-            foreach ($elementPaths as $subDir) {
+        foreach ($elementPaths as $subDir) {
+            foreach ($this->_paths($plugin) as $path) {
                 yield $path . $subDir . DIRECTORY_SEPARATOR;
             }
         }

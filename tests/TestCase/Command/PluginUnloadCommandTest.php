@@ -27,6 +27,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 class PluginUnloadCommandTest extends TestCase
 {
     use ConsoleIntegrationTestTrait;
+    use PluginConfigFileTrait;
 
     /**
      * @var string
@@ -59,7 +60,7 @@ class PluginUnloadCommandTest extends TestCase
         ];
         CONTENTS;
 
-        file_put_contents($this->configFile, $contents);
+        $this->writePhpFile($this->configFile, $contents);
 
         $this->setAppNamespace();
     }
@@ -71,7 +72,8 @@ class PluginUnloadCommandTest extends TestCase
     {
         parent::tearDown();
 
-        file_put_contents($this->configFile, $this->originalContent);
+        Plugin::getCollection()->clear();
+        $this->writePhpFile($this->configFile, $this->originalContent);
     }
 
     /**
@@ -80,7 +82,10 @@ class PluginUnloadCommandTest extends TestCase
     #[DataProvider('pluginNameProvider')]
     public function testUnload($plugin): void
     {
-        $this->exec('plugin unload ' . $plugin);
+        // Removed the deprecated() wrapping when plugin class is added to TestPluginTwo
+        $this->deprecated(function () use ($plugin): void {
+            $this->exec('plugin unload ' . $plugin);
+        });
 
         $this->assertExitCode(CommandInterface::CODE_SUCCESS);
         $contents = file_get_contents($this->configFile);
@@ -99,7 +104,7 @@ class PluginUnloadCommandTest extends TestCase
 
     public function testUnloadNoConfigFile(): void
     {
-        unlink($this->configFile);
+        $this->deletePhpFile($this->configFile);
 
         $this->exec('plugin unload TestPlugin');
         $this->assertExitCode(CommandInterface::CODE_ERROR);
@@ -108,7 +113,10 @@ class PluginUnloadCommandTest extends TestCase
 
     public function testUnloadUnknownPlugin(): void
     {
-        $this->exec('plugin unload NopeNotThere');
+        // Removed the deprecated() wrapping when plugin class is added to TestPluginTwo
+        $this->deprecated(function (): void {
+            $this->exec('plugin unload NopeNotThere');
+        });
         $this->assertExitCode(CommandInterface::CODE_ERROR);
         $this->assertErrorContains('Plugin `NopeNotThere` could not be found');
     }

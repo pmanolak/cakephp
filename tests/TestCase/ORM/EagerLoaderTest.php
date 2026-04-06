@@ -429,6 +429,9 @@ class EagerLoaderTest extends TestCase
             'clients__company_id' => 'clients.company_id',
             'clients__telephone' => 'clients.telephone',
             'orders__total' => 'orders.total', 'orders__placed' => 'orders.placed',
+            // Primary keys are added to ensure proper entity hydration
+            'clients__id' => 'clients.id',
+            'orders__id' => 'orders.id',
         ];
         $this->assertEquals($expected, $select);
     }
@@ -457,7 +460,12 @@ class EagerLoaderTest extends TestCase
         $query = new SelectQuery($this->table);
         $query->select('foo.id')->contain($contains)->sql();
         $select = $query->clause('select');
-        $expected = ['foo__id' => 'foo.id', 'clients__name' => 'clients.name'];
+        $expected = [
+            'foo__id' => 'foo.id',
+            'clients__name' => 'clients.name',
+            // Primary key is now auto-added to ensure proper entity hydration
+            'clients__id' => 'clients.id',
+        ];
         $expected = $this->_quoteArray($expected);
         $this->assertEquals($expected, $select);
 
@@ -621,5 +629,35 @@ class EagerLoaderTest extends TestCase
         $result = $loader->setMatching('clients');
         $this->assertInstanceOf(EagerLoader::class, $result);
         $this->assertArrayHasKey('clients', $loader->getMatching());
+    }
+
+    /**
+     * Test that calling setMatching without a builder preserves the existing queryBuilder.
+     *
+     * @see https://github.com/cakephp/cakephp/issues/19285
+     */
+    public function testSetMatchingPreservesExistingQueryBuilder(): void
+    {
+        $loader = new EagerLoader();
+        $builderCalled = false;
+        $loader->setMatching('clients', function ($q) use (&$builderCalled) {
+            $builderCalled = true;
+
+            return $q;
+        });
+
+        // Second call without builder should not override the first
+        $loader->setMatching('clients');
+
+        $matching = $loader->getMatching();
+        $this->assertArrayHasKey('clients', $matching);
+        $this->assertArrayHasKey('queryBuilder', $matching['clients']);
+        $this->assertNotNull($matching['clients']['queryBuilder']);
+
+        // Actually call the builder to verify it's preserved
+        $matching['clients']['queryBuilder'](
+            Mockery::mock(SelectQuery::class),
+        );
+        $this->assertTrue($builderCalled, 'Original queryBuilder should be preserved and called');
     }
 }

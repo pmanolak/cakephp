@@ -32,6 +32,7 @@ use Cake\ORM\Table;
 use Cake\TestSuite\TestCase;
 use InvalidArgumentException;
 use MyClass;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use RuntimeException;
 use SplFixedArray;
 use stdClass;
@@ -46,6 +47,7 @@ use TestApp\Utility\ThrowsDebugInfo;
  * !!! Be careful with changing code below as it may
  * !!! change line numbers which are used in the tests
  */
+#[AllowMockObjectsWithoutExpectations]
 class DebuggerTest extends TestCase
 {
     /**
@@ -195,6 +197,7 @@ object(Cake\View\View) id:0 {
   [protected] request => object(Cake\Http\ServerRequest) id:3 {}
   [protected] response => object(Cake\Http\Response) id:4 {}
   [protected] elementCache => 'default'
+  [protected] configMergeStrategy => 'deep'
   [protected] _passedVars => [
     (int) 0 => 'viewVars',
     (int) 1 => 'autoLayout',
@@ -205,7 +208,8 @@ object(Cake\View\View) id:0 {
     (int) 6 => 'theme',
     (int) 7 => 'layoutPath',
     (int) 8 => 'templatePath',
-    (int) 9 => 'plugin'
+    (int) 9 => 'plugin',
+    (int) 10 => 'configMergeStrategy'
   ]
   [protected] _defaultConfig => []
   [protected] _paths => []
@@ -348,7 +352,7 @@ TEXT;
      */
     public function testExportVarAsPlainText(): void
     {
-        Debugger::configInstance('exportFormatter', null);
+        Debugger::configInstance('exportFormatter');
         $result = Debugger::exportVarAsPlainText(123);
         $this->assertSame('(int) 123', $result);
 
@@ -456,7 +460,7 @@ TEXT;
             'className' => 'Array',
         ]);
 
-        Debugger::configInstance('exportFormatter', null);
+        Debugger::configInstance('exportFormatter');
         Debugger::log(123);
         $messages = implode('', Log::engine('test')->read());
         Log::engine('test')->clear();
@@ -846,5 +850,25 @@ EXPECTED;
         });
         Debugger::setEditor('open');
         $this->assertSame('test.php/123', Debugger::editorUrl('test.php', 123));
+    }
+
+    /**
+     * Test editorBasePath configuration for path remapping
+     */
+    public function testEditorUrlWithBasePath(): void
+    {
+        // Set up editor base path replacement
+        Configure::write('Debugger.editorBasePath', '/home/user/projects/myapp');
+        Debugger::getInstance(TestDebugger::class);
+        Debugger::getInstance(Debugger::class);
+
+        Debugger::setEditor('phpstorm');
+
+        // Test that ROOT is replaced with the configured base path
+        $file = ROOT . '/src/Controller/UsersController.php';
+        $result = Debugger::editorUrl($file, 10);
+
+        $expected = 'phpstorm://open?file=/home/user/projects/myapp/src/Controller/UsersController.php&line=10';
+        $this->assertSame($expected, $result);
     }
 }

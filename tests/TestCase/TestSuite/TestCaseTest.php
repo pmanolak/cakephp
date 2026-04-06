@@ -30,6 +30,7 @@ use Cake\Test\Fixture\FixturizedTestCase;
 use Cake\TestSuite\TestCase;
 use Exception;
 use PHPUnit\Framework\AssertionFailedError;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\WithoutErrorHandler;
 use PHPUnit\Framework\TestStatus\Skipped;
 use PHPUnit\Framework\TestStatus\Success;
@@ -45,6 +46,7 @@ use function Cake\Core\deprecationWarning;
 /**
  * TestCaseTest
  */
+#[AllowMockObjectsWithoutExpectations]
 class TestCaseTest extends TestCase
 {
     protected function setUp(): void
@@ -396,22 +398,6 @@ class TestCaseTest extends TestCase
 
         $Tags = $this->getMockForModel('Tags', ['save']);
         $this->assertSame(Tag::class, $Tags->getEntityClass());
-
-        $this->deprecated(function (): void {
-            $SluggedPosts = $this->getMockForModel('SluggedPosts', ['slugify']);
-            $SluggedPosts->expects($this->once())
-                ->method('slugify')
-                ->with('some value')
-                ->willReturn('mocked');
-            $this->assertSame('mocked', $SluggedPosts->slugify('some value'));
-
-            $SluggedPosts = $this->getMockForModel('SluggedPosts', ['save', 'slugify']);
-            $SluggedPosts->expects($this->once())
-                ->method('slugify')
-                ->with('some value two')
-                ->willReturn('mocked');
-            $this->assertSame('mocked', $SluggedPosts->slugify('some value two'));
-        });
     }
 
     /**

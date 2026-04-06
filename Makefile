@@ -167,24 +167,13 @@ components: $(foreach component, $(COMPONENTS), component-$(component))
 components-tag: $(foreach component, $(COMPONENTS), tag-component-$(component))
 .PHONY: components-tag
 
-# Generate split components for the 'next_branch' if defined.
-components-next:
-	if [ "$(NEXT_BRANCH)" = '' ]; then \
-		echo "Cannot update component repos for next branch, NEXT_BRANCH is not set"; \
-		exit 0; \
-	fi;
-	make CURRENT_BRANCH=$(NEXT_BRANCH) components
-	make clean-components-branches
-.PHONY: components-next
-
 component-%:
 	git checkout $(CURRENT_BRANCH) > /dev/null
-	- (git remote add $* git@github.com:$(OWNER)/$*.git -f 2> /dev/null)
+	- (git remote add pkg-$* git@github.com:$(OWNER)/$*.git -f 2> /dev/null)
 	- (git branch -D $* 2> /dev/null)
-	git checkout -b $*
-	git filter-branch --prune-empty --subdirectory-filter src/$(shell php -r "echo ucfirst('$*');") -f $*
-	git push -f $* $*:$(CURRENT_BRANCH)
-	git checkout $(CURRENT_BRANCH) > /dev/null
+	git branch $* $(CURRENT_BRANCH)
+	python3 contrib/git-filter-repo --subdirectory-filter src/$(shell php -r "echo ucfirst('$*');") --refs refs/heads/$* --force
+	git push -f pkg-$* $*:$(CURRENT_BRANCH)
 
 tag-component-%: component-% guard-VERSION guard-GITHUB_TOKEN
 	@echo "Creating tag for the $* component"
@@ -195,20 +184,20 @@ tag-component-%: component-% guard-VERSION guard-GITHUB_TOKEN
 
 # Task for cleaning up branches and remotes after updating split packages
 clean-components-branches: $(foreach component, $(COMPONENTS), clean-component-branch-$(component))
-.PHONY: clean-component-branches
+.PHONY: clean-components-branches
 
 clean-component-branch-%:
 	git branch -D $*
-	git remote rm $*
+	git remote rm pkg-$*
 
 # Tasks for cleaning up branches created by security fixes to old branches.
 components-clean: $(foreach component, $(COMPONENTS), clean-component-$(component))
 clean-component-%:
-	- (git remote add $* git@github.com:$(OWNER)/$*.git -f 2> /dev/null)
+	- (git remote add pkg-$* git@github.com:$(OWNER)/$*.git -f 2> /dev/null)
 	- (git branch -D $* 2> /dev/null)
-	- git push -f $* :$(CURRENT_BRANCH)
+	- git push -f pkg-$* :$(CURRENT_BRANCH)
 .PHONY: components-clean
 
 # Top level alias for doing a release.
-release: guard-VERSION tag-release components-tag package publish components-next
+release: guard-VERSION tag-release components-tag package publish
 .PHONY: release

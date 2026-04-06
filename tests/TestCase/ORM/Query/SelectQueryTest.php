@@ -16,6 +16,7 @@ declare(strict_types=1);
  */
 namespace Cake\Test\TestCase\ORM\Query;
 
+use AssertionError;
 use Cake\Cache\CacheEngine;
 use Cake\Cache\Engine\FileEngine;
 use Cake\Database\Connection;
@@ -28,7 +29,6 @@ use Cake\Database\Expression\FunctionExpression;
 use Cake\Database\Expression\IdentifierExpression;
 use Cake\Database\Expression\OrderByExpression;
 use Cake\Database\Expression\QueryExpression;
-use Cake\Database\ExpressionInterface;
 use Cake\Database\StatementInterface;
 use Cake\Database\TypeMap;
 use Cake\Database\ValueBinder;
@@ -42,7 +42,9 @@ use Cake\ORM\Query;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\ResultSet;
 use Cake\TestSuite\TestCase;
+use Closure;
 use InvalidArgumentException;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 use TestApp\Model\Table\ArticlesTable;
@@ -1612,6 +1614,29 @@ class SelectQueryTest extends TestCase
     }
 
     /**
+     * Test that rebinding parameters clears the count cache
+     */
+    public function testCountWithRebinding(): void
+    {
+        $table = $this->getTableLocator()->get('Articles');
+
+        $query = $table->find()
+            ->where('id >= :start')
+            ->where('id <= :end')
+            ->bind(':start', 1, 'integer')
+            ->bind(':end', 3, 'integer');
+
+        $firstCount = $query->count();
+        $this->assertSame(3, $firstCount);
+
+        $query->bind(':start', 2, 'integer')
+            ->bind(':end', 2, 'integer');
+
+        $secondCount = $query->count();
+        $this->assertSame(1, $secondCount, 'Count should reflect the new binding value');
+    }
+
+    /**
      * Test getting counts from queries with contain.
      */
     public function testCountWithContain(): void
@@ -1793,7 +1818,7 @@ class SelectQueryTest extends TestCase
         $table = $this->getTableLocator()->get('articles');
 
         $query = $table->updateQuery();
-        $result = $query->update($query->newExpr('articles, authors'))
+        $result = $query->update($query->expr('articles, authors'))
             ->set(['title' => 'First'])
             ->where(['articles.author_id = authors.id'])
             ->andWhere(['authors.name' => 'mariano'])
@@ -1842,11 +1867,7 @@ class SelectQueryTest extends TestCase
      */
     public function testClearContain(): void
     {
-        /** @var \Cake\ORM\Query\SelectQuery $query */
-        $query = $this->getMockBuilder(Query::class)
-            ->onlyMethods(['all'])
-            ->setConstructorArgs([$this->table])
-            ->getMock();
+        $query = new SelectQuery($this->table);
 
         $query->contain([
             'Articles',
@@ -1869,20 +1890,17 @@ class SelectQueryTest extends TestCase
      */
     public function testCacheReadIntegration(): void
     {
-        $query = $this->getMockBuilder(Query::class)
-            ->onlyMethods(['execute'])
-            ->setConstructorArgs([$this->table])
-            ->getMock();
+        $query = Mockery::mock(new Query($this->table))->makePartial();
         $resultSet = new ResultSet([]);
 
-        $query->expects($this->never())
-            ->method('execute');
+        $query->shouldReceive('execute')->never();
 
-        $cacher = $this->getMockBuilder(CacheEngine::class)->getMock();
-        $cacher->expects($this->once())
-            ->method('get')
+        $cacher = Mockery::mock(CacheEngine::class);
+        $cacher->shouldReceive('get')
             ->with('my_key')
-            ->willReturn($resultSet);
+            ->once()
+            ->andReturn($resultSet);
+        $cacher->shouldReceive('set')->never();
 
         $query->cache('my_key', $cacher)
             ->where(['id' => 1]);
@@ -1901,13 +1919,17 @@ class SelectQueryTest extends TestCase
 
         $query->select(['id', 'title']);
 
-        $cacher = $this->getMockBuilder(CacheEngine::class)->getMock();
-        $cacher->expects($this->once())
-            ->method('set')
-            ->with(
-                'my_key',
-                $this->isInstanceOf(ResultSetInterface::class),
-            );
+        $cacher = Mockery::mock(CacheEngine::class);
+        $cacher->shouldReceive('get')
+            ->with('my_key')
+            ->once()
+            ->andReturn(null);
+        $cacher->shouldReceive('set')
+            ->withArgs(function (string $key, mixed $value): bool {
+                return $key === 'my_key' && $value instanceof ResultSetInterface;
+            })
+            ->once()
+            ->andReturn(true);
 
         $query->cache('my_key', $cacher)
             ->where(['id' => 1]);
@@ -2121,7 +2143,7 @@ class SelectQueryTest extends TestCase
         $this->assertSame([], $query->getResultFormatters());
 
         $query->formatResults($callback1);
-        $query->formatResults($callback2, $query::PREPEND);
+        $query->formatResults($callback2, SelectQuery::PREPEND);
         $this->assertSame([$callback2, $callback1], $query->getResultFormatters());
     }
 
@@ -2354,14 +2376,12 @@ class SelectQueryTest extends TestCase
      */
     public function testCountCache(): void
     {
-        $query = $this->getMockBuilder(Query::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['_performCount'])
-            ->getMock();
-
-        $query->expects($this->once())
-            ->method('_performCount')
-            ->willReturn(1);
+        $query = Mockery::mock(Query::class)
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $query->shouldReceive('_performCount')
+            ->once()
+            ->andReturn(1);
 
         $result = $query->count();
         $this->assertSame(1, $result, 'The result of the sql query should be returned');
@@ -2376,14 +2396,12 @@ class SelectQueryTest extends TestCase
      */
     public function testCountCacheDirty(): void
     {
-        $query = $this->getMockBuilder(Query::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['_performCount'])
-            ->getMock();
-
-        $query->expects($this->exactly(2))
-            ->method('_performCount')
-            ->willReturn(1, 2);
+        $query = Mockery::mock(Query::class)
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $query->shouldReceive('_performCount')
+            ->twice()
+            ->andReturn(1, 2);
 
         $result = $query->count();
         $this->assertSame(1, $result, 'The result of the sql query should be returned');
@@ -2392,6 +2410,34 @@ class SelectQueryTest extends TestCase
 
         $secondResult = $query->count();
         $this->assertSame(2, $secondResult, 'The query cache should be dropped with any modification');
+
+        $thirdResult = $query->count();
+        $this->assertSame(2, $thirdResult, 'The query has not been modified, the cached value is valid');
+    }
+
+    /**
+     * Test that bind() marks the query as dirty and clears cached count
+     */
+    public function testCountCacheClearedOnBind(): void
+    {
+        $query = Mockery::mock(SelectQuery::class)
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $query->shouldReceive('_performCount')
+            ->twice()
+            ->andReturn(1, 2);
+
+        $query->bind(':start', 'value1');
+        $query->bind(':end', 'value2');
+
+        $result = $query->count();
+        $this->assertSame(1, $result, 'The result of the first count should be returned');
+
+        $query->bind(':start', 'new_value1');
+        $query->bind(':end', 'new_value2');
+
+        $secondResult = $query->count();
+        $this->assertSame(2, $secondResult, 'The query cache should be dropped after bind()');
 
         $thirdResult = $query->count();
         $this->assertSame(2, $thirdResult, 'The query has not been modified, the cached value is valid');
@@ -2553,6 +2599,38 @@ class SelectQueryTest extends TestCase
     }
 
     /**
+     * Tests that when selecting only specific fields from a contained association,
+     * the primary key is automatically added to ensure proper entity loading.
+     */
+    public function testContainWithOnlyNullableFields(): void
+    {
+        $table = $this->getTableLocator()->get('Articles');
+        $table->belongsTo('Authors');
+
+        // First, let's test with a regular field to ensure our fix works
+        $query = $table->find()
+            ->contain(['Authors' => function ($q) {
+                // Select only the name field (not the primary key)
+                return $q->select(['Authors.name']);
+            }])
+            ->where(['Articles.id' => 1]);
+
+        $result = $query->first();
+
+        // The author entity should be loaded
+        $this->assertNotNull($result->author);
+        $this->assertInstanceOf('Cake\ORM\Entity', $result->author);
+
+        // The primary key should have been automatically added even though we didn't select it
+        $this->assertTrue($result->author->has('id'));
+        $this->assertEquals(1, $result->author->id);
+
+        // The name field we selected should also be present
+        $this->assertTrue($result->author->has('name'));
+        $this->assertEquals('mariano', $result->author->name);
+    }
+
+    /**
      * Tests that it is possible to attach more association when using a query
      * builder for other associations
      */
@@ -2649,17 +2727,20 @@ class SelectQueryTest extends TestCase
             'formatters' => 1,
             'mapReducers' => 1,
             'contain' => [],
-            'matching' => [
-                'articles' => [
-                    'matching' => true,
-                    'queryBuilder' => null,
-                    'joinType' => 'INNER',
-                ],
-            ],
             'extraOptions' => ['foo' => 'bar'],
             'repository' => $table,
         ];
-        $this->assertSame($expected, $query->__debugInfo());
+        $result = $query->__debugInfo();
+
+        // Check matching separately since queryBuilder is a Closure
+        $this->assertArrayHasKey('matching', $result);
+        $this->assertArrayHasKey('articles', $result['matching']);
+        $this->assertTrue($result['matching']['articles']['matching']);
+        $this->assertInstanceOf(Closure::class, $result['matching']['articles']['queryBuilder']);
+        $this->assertSame('INNER', $result['matching']['articles']['joinType']);
+        unset($result['matching']);
+
+        $this->assertSame($expected, $result);
     }
 
     /**
@@ -2730,7 +2811,7 @@ class SelectQueryTest extends TestCase
             ->join([
                 'person' => [
                     'table' => 'authors',
-                    'conditions' => [$query->newExpr()->equalFields('person.id', 'articles.author_id')],
+                    'conditions' => [$query->expr()->equalFields('person.id', 'articles.author_id')],
                 ],
             ])
             ->orderBy(['articles.id' => 'ASC'])
@@ -3111,7 +3192,7 @@ class SelectQueryTest extends TestCase
     {
         $table = $this->getTableLocator()->get('Articles');
         $query = $table->find()->where(['id >' => 1]);
-        $query->where(function (ExpressionInterface $exp) {
+        $query->where(function (QueryExpression $exp) {
             return $exp->add('author_id = :author');
         });
         $query->bind(':author', 1, 'integer');
@@ -3273,7 +3354,7 @@ class SelectQueryTest extends TestCase
         $result = $table
             ->find()
             ->select(function ($q) {
-                return ['foo' => $q->newExpr('1 + 1')];
+                return ['foo' => $q->expr('1 + 1')];
             })
             ->select($table)
             ->select($table->authors)
@@ -3283,7 +3364,7 @@ class SelectQueryTest extends TestCase
         $expected = $table
             ->find()
             ->select(function ($q) {
-                return ['foo' => $q->newExpr('1 + 1')];
+                return ['foo' => $q->expr('1 + 1')];
             })
             ->enableAutoFields()
             ->contain(['authors'])
@@ -3847,7 +3928,7 @@ class SelectQueryTest extends TestCase
                 'post_count' => $query->func()->count('posts.id'),
             ])
             ->groupBy(['posts.author_id'])
-            ->having([$query->newExpr()->gte('post_count', 2, 'integer')])
+            ->having([$query->expr()->gte('post_count', 2, 'integer')])
             ->enableHydration(false)
             ->toArray();
 
@@ -3997,5 +4078,98 @@ class SelectQueryTest extends TestCase
             'MyFunction((SELECT Articles.column AS Articles__column FROM articles Articles))',
             preg_replace('/[`"\[\]]/', '', $function->sql($binder)),
         );
+    }
+
+    public function testContainConflictingAliases(): void
+    {
+        $comments = $this->getTableLocator()->get('Comments');
+
+        $comments->belongsTo('Authors', [
+            'className' => 'Authors',
+            'foreignKey' => 'user_id',
+        ]);
+
+        $comments
+            ->belongsTo('Articles', [
+                'className' => 'Articles',
+                'foreignKey' => 'article_id',
+            ])
+            ->getTarget()
+            ->belongsTo('Authors', [
+                'className' => 'Authors',
+                'foreignKey' => 'author_id',
+            ]);
+
+        $result = $comments->find()
+            ->contain('Authors')
+            ->contain('Articles', function (SelectQuery $q) {
+                return $q->contain('Authors');
+            })
+            ->where(['Comments.id' => 1])
+            ->disableHydration()
+            ->toArray();
+
+        $this->assertEquals(2, $result[0]['author']['id']);
+        $this->assertEquals(1, $result[0]['article']['author']['id']);
+    }
+
+    public function testJoinWithConflictingAliases(): void
+    {
+        $comments = $this->getTableLocator()->get('Comments');
+
+        $comments->belongsTo('Authors', [
+            'className' => 'Authors',
+            'foreignKey' => 'user_id',
+        ]);
+
+        $comments
+            ->belongsTo('Articles', [
+                'className' => 'Articles',
+                'foreignKey' => 'article_id',
+            ])
+            ->getTarget()
+            ->belongsTo('Authors', [
+                'className' => 'Authors',
+                'foreignKey' => 'author_id',
+            ]);
+
+        $this->expectException(AssertionError::class);
+        $this->expectExceptionMessage('You cannot join with `Articles.Authors` because it conflicts with the existing `Authors` join.');
+        $comments->find()
+            ->leftJoinWith('Authors')
+            ->leftJoinWith('Articles', fn(SelectQuery $q) => $q->leftJoinWith('Authors'))
+            ->where(['Comments.id' => 1])
+            ->disableHydration()
+            ->all();
+    }
+
+    public function testMatchingConflictingAliases(): void
+    {
+        $comments = $this->getTableLocator()->get('Comments');
+
+        $comments->belongsTo('Authors', [
+            'className' => 'Authors',
+            'foreignKey' => 'user_id',
+        ]);
+
+        $comments
+            ->belongsTo('Articles', [
+                'className' => 'Articles',
+                'foreignKey' => 'article_id',
+            ])
+            ->getTarget()
+            ->belongsTo('Authors', [
+                'className' => 'Authors',
+                'foreignKey' => 'author_id',
+            ]);
+
+        $this->expectException(AssertionError::class);
+        $this->expectExceptionMessage('You cannot join with `Articles.Authors` because it conflicts with the existing `Authors` join.');
+        $comments->find()
+            ->leftJoinWith('Authors')
+            ->matching('Articles', fn(SelectQuery $q) => $q->leftJoinWith('Authors'))
+            ->where(['Comments.id' => 1])
+            ->disableHydration()
+            ->all();
     }
 }

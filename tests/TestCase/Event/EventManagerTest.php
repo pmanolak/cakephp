@@ -685,7 +685,7 @@ class EventManagerTest extends TestCase
 
         $result = $manager->getEventList();
         $this->assertInstanceOf(EventList::class, $result);
-        $this->assertCount(2, $result);
+        $result = iterator_to_array($result);
         $this->assertEquals($result[0], $event);
         $this->assertEquals($result[1], $event2);
 
@@ -924,7 +924,7 @@ class EventManagerTest extends TestCase
             return 'example event called';
         });
         $result = '';
-        $this->deprecated(function () use (&$eventManager, &$result) {
+        $this->deprecated(function () use (&$eventManager, &$result): void {
             $result = $eventManager->dispatch(new Event('example'));
         });
         $this->assertEquals('example event called', $result->getResult());

@@ -21,6 +21,7 @@ use Cake\ORM\Association\BelongsToMany;
 use Cake\ORM\Entity;
 use Cake\ORM\Table;
 use Cake\TestSuite\TestCase;
+use Mockery;
 
 /**
  * Tests BelongsToManySaveAssociatedOnlyEntitiesAppendTest class
@@ -28,12 +29,12 @@ use Cake\TestSuite\TestCase;
 class BelongsToManySaveAssociatedOnlyEntitiesAppendTest extends TestCase
 {
     /**
-     * @var \Cake\ORM\Table|\PHPUnit\Framework\MockObject\MockObject
+     * @var \Cake\ORM\Table
      */
     protected $tag;
 
     /**
-     * @var \Cake\ORM\Table|\PHPUnit\Framework\MockObject\MockObject
+     * @var \Cake\ORM\Table
      */
     protected $article;
 
@@ -43,10 +44,7 @@ class BelongsToManySaveAssociatedOnlyEntitiesAppendTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tag = $this->getMockBuilder(Table::class)
-            ->onlyMethods(['find', 'delete'])
-            ->setConstructorArgs([['alias' => 'Tags', 'table' => 'tags']])
-            ->getMock();
+        $this->tag = new Table(['alias' => 'Tags', 'table' => 'tags']);
         $this->tag->setSchema([
             'id' => ['type' => 'integer'],
             'name' => ['type' => 'string'],
@@ -54,10 +52,7 @@ class BelongsToManySaveAssociatedOnlyEntitiesAppendTest extends TestCase
                 'primary' => ['type' => 'primary', 'columns' => ['id']],
             ],
         ]);
-        $this->article = $this->getMockBuilder(Table::class)
-            ->onlyMethods(['find', 'delete'])
-            ->setConstructorArgs([['alias' => 'Articles', 'table' => 'articles']])
-            ->getMock();
+        $this->article = new Table(['alias' => 'Articles', 'table' => 'articles']);
         $this->article->setSchema([
             'id' => ['type' => 'integer'],
             'name' => ['type' => 'string'],
@@ -73,9 +68,9 @@ class BelongsToManySaveAssociatedOnlyEntitiesAppendTest extends TestCase
     public function testSaveAssociatedOnlyEntitiesAppend(): void
     {
         $connection = ConnectionManager::get('test');
-        $table = $this->getMockBuilder(MockedTable::class)
-            ->setConstructorArgs([['table' => 'tags', 'connection' => $connection]])
-            ->getMock();
+        /** @var \Cake\Test\TestCase\ORM\Association\MockedTable&\Mockery\MockInterface $table */
+        $table = Mockery::mock(new MockedTable(['table' => 'tags', 'connection' => $connection]))
+            ->makePartial();
         $table->setPrimaryKey('id');
 
         $config = [
@@ -93,8 +88,7 @@ class BelongsToManySaveAssociatedOnlyEntitiesAppendTest extends TestCase
             ],
         ]);
 
-        $table->expects($this->never())
-            ->method('saveAssociated');
+        $table->shouldReceive('saveAssociated')->never();
 
         $association = new BelongsToMany('Tags', $config);
         $association->saveAssociated($entity);

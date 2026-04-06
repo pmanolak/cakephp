@@ -672,6 +672,31 @@ class ViewTest extends TestCase
     }
 
     /**
+     * Test that prefix-specific plugin templates take precedence over non-prefixed app overrides.
+     *
+     * This test ensures that when:
+     * - A plugin provides a prefix-specific element (Admin/element/foo.php)
+     * - The app provides a non-prefixed override (templates/plugin/Plugin/element/foo.php)
+     *
+     * The plugin's prefixed version is used in the prefixed context, not the app's non-prefixed override.
+     * The expected resolution order is:
+     * 1. App prefix-element
+     * 2. Plugin prefix-element (should win in this test)
+     * 3. App element
+     * 4. Plugin element
+     */
+    public function testPrefixedPluginElementTakesPrecedenceOverNonPrefixedAppOverride(): void
+    {
+        $this->View->setRequest($this->View->getRequest()->withParam('prefix', 'Admin'));
+        $result = $this->View->element('TestPlugin.prefix_override_test');
+        $this->assertSame('plugin - admin prefixed', $result);
+
+        $this->View->setRequest($this->View->getRequest()->withParam('prefix', null));
+        $result = $this->View->element('TestPlugin.prefix_override_test');
+        $this->assertSame('app override - non-prefixed', $result);
+    }
+
+    /**
      * Test loading missing view element
      */
     public function testElementMissing(): void
@@ -1082,8 +1107,7 @@ class ViewTest extends TestCase
      */
     public function testRenderUsingLayoutArgument(): void
     {
-        $pdoException = $this->getMockBuilder(PDOException::class)->getMock();
-        $error = new QueryException('this is sql string', $pdoException);
+        $error = new QueryException('this is sql string', new PDOException());
         $exceptions = [$error];
         $message = 'it works';
         $trace = $error->getTrace();
@@ -1116,7 +1140,6 @@ class ViewTest extends TestCase
     {
         $this->PostsController->setPlugin('TestPlugin');
         $this->PostsController->setName('Posts');
-        /** @var \TestApp\View\TestView $View */
         $View = $this->PostsController->createView(TestView::class);
         $View->setTemplatePath('element');
 
@@ -1124,6 +1147,116 @@ class ViewTest extends TestCase
         $result = $View->getTemplateFileName('sub_dir/sub_element');
         $expected = $pluginPath . 'templates' . DS . 'element' . DS . 'sub_dir' . DS . 'sub_element.php';
         $this->assertPathEquals($expected, $result);
+    }
+
+    /**
+     * Test nested template paths work correctly with plugins when templatePath differs from name
+     */
+    public function testGetTemplateFileNameNestedPathWithPluginWhenTemplatePathDiffersFromName(): void
+    {
+        $this->PostsController->setPlugin('TestPlugin');
+        // Create a view where name (Posts) differs from templatePath (Pages)
+        $View = $this->PostsController->createView(TestView::class);
+        $View->setTemplatePath('Pages');
+
+        $pluginPath = TEST_APP . 'Plugin' . DS . 'TestPlugin' . DS;
+        $result = $View->getTemplateFileName('subfolder/example');
+        // Should prepend templatePath since it differs from name
+        $expected = $pluginPath . 'templates' . DS . 'Pages' . DS . 'subfolder' . DS . 'example.php';
+        $this->assertPathEquals($expected, $result);
+    }
+
+    /**
+     * Test fix for issue #19180 - plugin template paths should not be duplicated
+     * when templatePath equals name and template contains directory separator.
+     *
+     * When rendering `$this->render('TestPlugin.Tests/nested/example')` from a controller
+     * where both templatePath and name are 'Tests', the path should resolve to
+     * 'templates/Tests/nested/example.php' not 'templates/Tests/Tests/nested/example.php'
+     */
+    public function testGetTemplateFileNamePluginPathNotDuplicatedWhenTemplatePathEqualsName(): void
+    {
+        $viewOptions = [
+            'plugin' => 'TestPlugin',
+            'name' => 'Tests',
+            'templatePath' => 'Tests',
+        ];
+
+        $View = new TestView(null, null, null, $viewOptions);
+
+        $pluginPath = TEST_APP . 'Plugin' . DS . 'TestPlugin' . DS;
+
+        // This is the exact scenario from issue #19180:
+        // When name equals templatePath AND we have a plugin AND the template contains a path,
+        // the path should NOT be duplicated
+        $result = $View->getTemplateFileName('Tests/nested/example');
+        $expected = $pluginPath . 'templates' . DS . 'Tests' . DS . 'nested' . DS . 'example.php';
+        $this->assertPathEquals($expected, $result);
+    }
+
+    /**
+     * Test fix for issue #19180 - using Plugin.Controller/template syntax
+     * should not duplicate the controller path when templatePath equals name.
+     */
+    public function testGetTemplateFileNamePluginDotSyntaxNoDuplication(): void
+    {
+        $viewOptions = [
+            'plugin' => null,
+            'name' => 'Tests',
+            'templatePath' => 'Tests',
+        ];
+
+        $View = new TestView(null, null, null, $viewOptions);
+
+        $pluginPath = TEST_APP . 'Plugin' . DS . 'TestPlugin' . DS;
+
+        // Using explicit plugin prefix with nested path
+        $result = $View->getTemplateFileName('TestPlugin.Tests/nested/example');
+        $expected = $pluginPath . 'templates' . DS . 'Tests' . DS . 'nested' . DS . 'example.php';
+        $this->assertPathEquals($expected, $result);
+    }
+
+    /**
+     * Test that when templatePath differs from name, the path is correctly prepended
+     * even with plugin templates (ensures fix doesn't break this case).
+     */
+    public function testGetTemplateFileNamePluginPathPrependedWhenTemplatePathDiffersFromName(): void
+    {
+        $viewOptions = [
+            'plugin' => 'TestPlugin',
+            'name' => 'Posts',
+            'templatePath' => 'Tests',
+        ];
+
+        $View = new TestView(null, null, null, $viewOptions);
+
+        $pluginPath = TEST_APP . 'Plugin' . DS . 'TestPlugin' . DS;
+
+        // When templatePath differs from name, should prepend templatePath
+        $result = $View->getTemplateFileName('nested/example');
+        $expected = $pluginPath . 'templates' . DS . 'Tests' . DS . 'nested' . DS . 'example.php';
+        $this->assertPathEquals($expected, $result);
+    }
+
+    /**
+     * Test that without plugin, nested paths work correctly regardless of templatePath/name match.
+     */
+    public function testGetTemplateFileNameNoPluginNestedPath(): void
+    {
+        $viewOptions = [
+            'plugin' => null,
+            'name' => 'Posts',
+            'templatePath' => 'Posts',
+        ];
+
+        $View = new TestView(null, null, null, $viewOptions);
+
+        // Without plugin, should always prepend templatePath
+        // This throws MissingTemplateException because the file doesn't exist,
+        // but the path construction is correct - we're just verifying the path logic
+        $this->expectException(MissingTemplateException::class);
+        $this->expectExceptionMessage('Posts' . DS . 'Posts' . DS . 'index.php');
+        $View->getTemplateFileName('Posts/index');
     }
 
     public function testGetTemplateException(): void

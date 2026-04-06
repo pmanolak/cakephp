@@ -24,6 +24,8 @@ use Cake\ORM\Table;
 
 /**
  * Contains common code needed by TranslateBehavior strategy classes.
+ *
+ * @require-implements \Cake\ORM\Behavior\Translate\TranslateStrategyInterface
  */
 trait TranslateStrategyTrait
 {
@@ -145,9 +147,9 @@ trait TranslateStrategyTrait
      * provided to `Table::newEntity()` or `Table::patchEntity()`.
      *
      * @param \Cake\ORM\Marshaller $marshaller The marshaler of the table the behavior is attached to.
-     * @param array $map The property map being built.
+     * @param array<string, callable> $map The property map being built.
      * @param array<string, mixed> $options The options array used in the marshaling call.
-     * @return array A map of `[property => callable]` of additional properties to marshal.
+     * @return array<string, callable> A map of `[property => callable]` of additional properties to marshal.
      */
     public function buildMarshalMap(Marshaller $marshaller, array $map, array $options): array
     {

@@ -63,6 +63,7 @@ use Exception;
 use InvalidArgumentException;
 use Mockery;
 use PDOException;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use TestApp\Model\Entity\Article;
@@ -78,6 +79,7 @@ use TestPlugin\Model\Table\CommentsTable;
 /**
  * Tests Table class
  */
+#[AllowMockObjectsWithoutExpectations]
 class TableTest extends TestCase
 {
     /**
@@ -1289,8 +1291,7 @@ class TableTest extends TestCase
             ->willReturn($query);
 
         $options = ['fields' => ['a', 'b']];
-        $query->expects($this->any())
-            ->method('select')
+        $query->method('select')
             ->willReturnSelf();
 
         $query->expects($this->once())->method('getOptions')
@@ -1324,7 +1325,7 @@ class TableTest extends TestCase
             ->find('withIdArgument', 2)
             ->find('custom', id: [1, 2], second: false);
 
-        $this->assertSame([2, 'id' => [1, 2], 'second' => false], $query->getOptions());
+        $this->assertSame(['id' => [1, 2], 'second' => false], $query->getOptions());
 
         $query = $this->getTableLocator()->get('Authors')
             ->find('withIdArgument', id: 2)
@@ -1766,7 +1767,7 @@ class TableTest extends TestCase
      */
     public function testTableClassInApp(): void
     {
-        $class = $this->createMock(Entity::class)::class;
+        $class = Mockery::mock(Entity::class)::class;
 
         if (!class_exists('TestApp\Model\Entity\TestUser')) {
             class_alias($class, 'TestApp\Model\Entity\TestUser');
@@ -1782,7 +1783,7 @@ class TableTest extends TestCase
      */
     public function testEntityClassInflection(): void
     {
-        $class = $this->createMock(Entity::class)::class;
+        $class = Mockery::mock(Entity::class)::class;
 
         if (!class_exists('TestApp\Model\Entity\CustomCookie')) {
             class_alias($class, 'TestApp\Model\Entity\CustomCookie');
@@ -1805,7 +1806,7 @@ class TableTest extends TestCase
      */
     public function testTableClassInPlugin(): void
     {
-        $class = $this->createMock(Entity::class)::class;
+        $class = Mockery::mock(Entity::class)::class;
 
         if (!class_exists('MyPlugin\Model\Entity\SuperUser')) {
             class_alias($class, 'MyPlugin\Model\Entity\SuperUser');
@@ -1847,7 +1848,7 @@ class TableTest extends TestCase
     public function testSetEntityClass(): void
     {
         $table = new Table();
-        $class = '\\' . $this->createMock(Entity::class)::class;
+        $class = '\\' . Mockery::mock(Entity::class)::class;
         $this->assertSame($table, $table->setEntityClass($class));
         $this->assertSame($class, $table->getEntityClass());
     }
@@ -2030,13 +2031,15 @@ class TableTest extends TestCase
      */
     public function testRemoveBehaviorMethodMapCleared(): void
     {
-        $table = new Table(['table' => 'articles']);
-        $table->addBehavior('Sluggable');
-        $this->assertTrue($table->behaviors()->hasMethod('slugify'), 'slugify should be mapped');
-        $this->assertSame('foo-bar', $table->slugify('foo bar'));
+        $this->deprecated(function (): void {
+            $table = new Table(['table' => 'articles']);
+            $table->addBehavior('Sluggable');
+            $this->assertTrue($table->behaviors()->hasMethod('slugify'), 'slugify should be mapped');
+            $this->assertSame('foo-bar', $table->slugify('foo bar'));
 
-        $table->removeBehavior('Sluggable');
-        $this->assertFalse($table->behaviors()->hasMethod('slugify'), 'slugify should not be callable');
+            $table->removeBehavior('Sluggable');
+            $this->assertFalse($table->behaviors()->hasMethod('slugify'), 'slugify should not be callable');
+        });
     }
 
     /**
@@ -2116,9 +2119,11 @@ class TableTest extends TestCase
      */
     public function testCallBehaviorMethod(): void
     {
-        $table = $this->getTableLocator()->get('article');
-        $table->addBehavior('Sluggable');
-        $this->assertSame('some-value', $table->slugify('some value'));
+        $this->deprecated(function (): void {
+            $table = $this->getTableLocator()->get('article');
+            $table->addBehavior('Sluggable');
+            $this->assertSame('some-value', $table->slugify('some value'));
+        });
     }
 
     /**
@@ -2126,9 +2131,11 @@ class TableTest extends TestCase
      */
     public function testCallBehaviorAliasedMethod(): void
     {
-        $table = $this->getTableLocator()->get('article');
-        $table->addBehavior('Sluggable', ['implementedMethods' => ['wednesday' => 'slugify']]);
-        $this->assertSame('some-value', $table->wednesday('some value'));
+        $this->deprecated(function (): void {
+            $table = $this->getTableLocator()->get('article');
+            $table->addBehavior('Sluggable', ['implementedMethods' => ['wednesday' => 'slugify']]);
+            $this->assertSame('some-value', $table->wednesday('some value'));
+        });
     }
 
     /**
@@ -2335,7 +2342,7 @@ class TableTest extends TestCase
             'created' => new DateTime('2013-10-10 00:00'),
             'updated' => new DateTime('2013-10-10 00:00'),
         ]);
-        $listener = function (EventInterface $event, $entity) {
+        $listener = function (EventInterface $event, $entity): void {
             $event->stopPropagation();
             $event->setResult($entity);
         };
@@ -2376,7 +2383,7 @@ class TableTest extends TestCase
             'created' => new DateTime('2013-10-10 00:00'),
             'updated' => new DateTime('2013-10-10 00:00'),
         ]);
-        $listener = function (EventInterface $event, $entity) {
+        $listener = function (EventInterface $event, $entity): void {
             $event->stopPropagation();
             $event->setResult(1);
         };
@@ -2509,7 +2516,7 @@ class TableTest extends TestCase
             ->onlyMethods(['execute', 'addDefaultTypes'])
             ->setConstructorArgs([$table])
             ->getMock();
-        $statement = $this->createMock(StatementInterface::class);
+        $statement = Mockery::mock(StatementInterface::class);
         $data = new Entity([
             'username' => 'superuser',
             'created' => new DateTime('2013-10-10 00:00'),
@@ -2522,8 +2529,9 @@ class TableTest extends TestCase
         $query->expects($this->once())->method('execute')
             ->willReturn($statement);
 
-        $statement->expects($this->once())->method('rowCount')
-            ->willReturn(0);
+        $statement->shouldReceive('rowCount')
+            ->once()
+            ->andReturn(0);
 
         $called = false;
         $listener = function ($e, $entity, $options) use (&$called): void {
@@ -2610,7 +2618,7 @@ class TableTest extends TestCase
 
         $connection->expects($this->once())->method('begin');
         $connection->expects($this->once())->method('commit');
-        $connection->expects($this->any())->method('inTransaction')->willReturn(true);
+        $connection->method('inTransaction')->willReturn(true);
         $data = new Entity([
             'username' => 'superuser',
             'created' => new DateTime('2013-10-10 00:00'),
@@ -2640,7 +2648,7 @@ class TableTest extends TestCase
             ->onlyMethods(['execute', 'addDefaultTypes'])
             ->setConstructorArgs([$table])
             ->getMock();
-        $table->expects($this->any())->method('getConnection')
+        $table->method('getConnection')
             ->willReturn($connection);
 
         $table->expects($this->once())->method('insertQuery')
@@ -2680,16 +2688,16 @@ class TableTest extends TestCase
             ->setConstructorArgs([$table])
             ->getMock();
 
-        $table->expects($this->any())->method('getConnection')
+        $table->method('getConnection')
             ->willReturn($connection);
 
         $table->expects($this->once())->method('insertQuery')
             ->willReturn($query);
 
-        $statement = $this->createMock(StatementInterface::class);
-        $statement->expects($this->once())
-            ->method('rowCount')
-            ->willReturn(0);
+        $statement = Mockery::mock(StatementInterface::class);
+        $statement->shouldReceive('rowCount')
+            ->once()
+            ->andReturn(0);
         $connection->expects($this->once())->method('begin');
         $connection->expects($this->once())->method('rollback');
         $query->expects($this->once())
@@ -2726,7 +2734,7 @@ class TableTest extends TestCase
         $this->assertEquals($entity->id, self::$nextUserId);
 
         $row = $table->find('all')->where(['id' => self::$nextUserId])->first();
-        $entity->set('password', null);
+        $entity->set('password');
         $this->assertEquals($entity->toArray(), $row->toArray());
     }
 
@@ -3448,8 +3456,7 @@ class TableTest extends TestCase
         $entity = new Entity(['id' => 1, 'name' => 'mark']);
 
         $mock = $this->getMockBuilder(EventManager::class)->getMock();
-        $mock->expects($this->any())
-            ->method('dispatch')
+        $mock->method('dispatch')
             ->willReturnCallback(function (EventInterface $event) {
                 $event->stopPropagation();
 
@@ -3470,8 +3477,7 @@ class TableTest extends TestCase
         $entity = new Entity(['id' => 1, 'name' => 'mark']);
 
         $mock = $this->getMockBuilder(EventManager::class)->getMock();
-        $mock->expects($this->any())
-            ->method('dispatch')
+        $mock->method('dispatch')
             ->willReturnCallback(function (EventInterface $event) {
                 $event->stopPropagation();
                 $event->setResult('got stopped');
@@ -3566,12 +3572,14 @@ class TableTest extends TestCase
      */
     public function testValidatorBehavior(): void
     {
-        $table = new Table();
-        $table->addBehavior('Validation');
+        $this->deprecated(function (): void {
+            $table = new Table();
+            $table->addBehavior('Validation');
 
-        $validator = $table->getValidator('Behavior');
-        $set = $validator->field('name');
-        $this->assertArrayHasKey('behaviorRule', $set);
+            $validator = $table->getValidator('Behavior');
+            $set = $validator->field('name');
+            $this->assertArrayHasKey('behaviorRule', $set);
+        });
     }
 
     /**
@@ -3603,12 +3611,43 @@ class TableTest extends TestCase
     }
 
     /**
+     * Checks that entity is passed into context.
+     *
+     * @return void
+     */
+    public function testValidatorWithEntityInContext(): void
+    {
+        $table = new class (['alias' => 'Users', 'table' => 'users', 'connection' => $this->connection]) extends Table {
+            public function validateMe(string $text, array $context): bool
+            {
+                if (!isset($context['entity'])) {
+                    throw new InvalidArgumentException('Entity not found in context');
+                }
+
+                return true;
+            }
+        };
+
+        $table->getValidator('default')->add(
+            'name',
+            'validateMe',
+            ['rule' => 'validateMe', 'provider' => 'table'],
+        );
+
+        $entity = $table->newEmptyEntity();
+        $result = $table->patchEntity($entity, [
+            'name' => 'test',
+        ]);
+        $this->assertSame('test', $result->get('name'));
+    }
+
+    /**
      * Tests that a InvalidArgumentException is thrown if the custom validator method does not exist.
      */
     public function testValidatorWithMissingMethod(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('The `Cake\ORM\Table::validationMissing()` validation method does not exists.');
+        $this->expectExceptionMessage('The `Cake\ORM\Table::validationMissing()` validation method does not exist.');
         $table = new Table();
         $table->getValidator('missing');
     }
@@ -4642,7 +4681,7 @@ class TableTest extends TestCase
     public function testReplaceHasManyOnErrorDependentCascadeCallbacks(): void
     {
         $articles = $this->getMockBuilder(Table::class)
-            ->onlyMethods(['delete'])
+            ->onlyMethods(['deleteMany'])
             ->setConstructorArgs([[
                 'connection' => $this->connection,
                 'alias' => 'Articles',
@@ -4650,7 +4689,7 @@ class TableTest extends TestCase
             ]])
             ->getMock();
 
-        $articles->method('delete')->willReturn(false);
+        $articles->method('deleteMany')->willReturn(false);
 
         $associations = new AssociationCollection();
 
@@ -6456,6 +6495,51 @@ class TableTest extends TestCase
             $this->assertEquals($v->site_articles, $result[$k]->site_articles);
             $this->assertEquals($v->articles, $result[$k]->articles);
         }
+    }
+
+    /**
+     * Tests loadInto() with deeply nested associations
+     */
+    public function testLoadIntoNestedAssociations(): void
+    {
+        $table = $this->getTableLocator()->get('Authors');
+
+        $entity = $table->get(1);
+        // This should work without throwing an error about 'includeFields' not being an association
+        $result = $table->loadInto($entity, ['Articles.Tags']);
+        $this->assertSame($entity, $result);
+        $this->assertNotEmpty($result->articles);
+        $this->assertNotEmpty($result->articles[0]->tags);
+
+        $expected = $table->get(1, contain: ['Articles.Tags']);
+        $this->assertEquals($expected->articles, $result->articles);
+        $this->assertEquals($expected->articles[0]->tags, $result->articles[0]->tags);
+    }
+
+    /**
+     * Tests loadInto() multiple times with nested associations - reproduces GitHub issue #16362
+     */
+    public function testLoadIntoMultipleTimesWithNestedAssociations(): void
+    {
+        $table = $this->getTableLocator()->get('Authors');
+
+        // First load some associations
+        $entity = $table->get(1);
+        $entity = $table->loadInto($entity, ['Articles']);
+        $this->assertNotEmpty($entity->articles);
+        $this->assertEmpty($entity->articles[0]->tags);
+
+        // Now load nested associations - this should not throw an error about 'includeFields'
+        $result = $table->loadInto($entity, ['Articles.Tags']);
+        $this->assertSame($entity, $result);
+
+        // Verify the nested associations were loaded correctly
+        $this->assertNotEmpty($result->articles);
+        $firstArticle = $result->articles[0];
+        $this->assertNotNull($firstArticle);
+
+        // Tags should be loaded now
+        $this->assertIsArray($firstArticle->tags);
     }
 
     /**
